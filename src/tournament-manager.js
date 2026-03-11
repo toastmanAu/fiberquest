@@ -112,11 +112,15 @@ class Tournament extends EventEmitter {
 
   /**
    * Register a player and generate their entry invoice.
-   * @param {string} playerId  - unique ID (e.g. 'player1', wallet address, etc)
-   * @param {string} name      - display name
-   * @returns {object} { playerId, invoice, amount_ckb }
+   * @param {string} playerId       - unique ID (e.g. 'player1', wallet address, etc)
+   * @param {string} name           - display name
+   * @param {object} opts
+   * @param {string} opts.payoutInvoice - BOLT11 invoice for payout (player generates this
+   *                                      on their Fiber node before joining). If provided,
+   *                                      the agent will pay autonomously on win — no human needed.
+   * @returns {object} { playerId, entryInvoice, amount_ckb, payoutReady }
    */
-  async addPlayer(playerId, name = playerId) {
+  async addPlayer(playerId, name = playerId, opts = {}) {
     if (this.state !== 'CREATED' && this.state !== 'WAITING_PLAYERS') {
       throw new Error(`Cannot add player in state ${this.state}`);
     }
@@ -127,19 +131,27 @@ class Tournament extends EventEmitter {
     const amountShannon = FiberClient.ckbToShannon(this.entryFee);
     const description   = `FiberQuest: ${this.gameDef.name} — ${this.mode?.name || this.modeId} — ${name}`;
 
-    console.log(`[Tournament] Generating invoice for ${name} (${this.entryFee} CKB)...`);
+    console.log(`[Tournament] Generating entry invoice for ${name} (${this.entryFee} CKB)...`);
     const invoiceResult = await this.fiber.newInvoice(amountShannon, description, {
       currency: this.currency,
       expiry: 0xe10,  // 3600 seconds — FiberClient converts to hex string
     });
 
-    const invoice = invoiceResult.invoice_address;
-    const paymentHash = invoiceResult.payment_hash;
+    const entryInvoice  = invoiceResult.invoice_address;
+    const paymentHash   = invoiceResult.payment_hash;
+    const payoutInvoice = opts.payoutInvoice || null;
+
+    if (payoutInvoice) {
+      console.log(`[Tournament] Payout invoice registered for ${name} ✅ (autonomous payout ready)`);
+    } else {
+      console.log(`[Tournament] ⚠️  No payout invoice for ${name} — will emit payout_needed on win`);
+    }
 
     this.players[playerId] = {
       name,
-      invoice,
+      entryInvoice,
       paymentHash,
+      payoutInvoice,   // null = manual payout needed; set = agent pays automatically
       paid: false,
       score: 0,
       joinedAt: Date.now(),
@@ -147,10 +159,29 @@ class Tournament extends EventEmitter {
     this.scores[playerId] = 0;
     this.state = 'WAITING_PLAYERS';
 
-    console.log(`[Tournament] Player ${name} registered. Invoice: ${invoice.slice(0, 40)}...`);
-    this.emit('invoice', { playerId, name, invoice, amount_ckb: this.entryFee });
+    console.log(`[Tournament] Player ${name} registered. Entry invoice: ${entryInvoice.slice(0, 40)}...`);
+    this.emit('invoice', {
+      playerId,
+      name,
+      invoice: entryInvoice,   // kept as 'invoice' for backwards compat
+      amount_ckb: this.entryFee,
+      payoutReady: !!payoutInvoice,
+    });
 
-    return { playerId, name, invoice, amount_ckb: this.entryFee };
+    return { playerId, name, entryInvoice, amount_ckb: this.entryFee, payoutReady: !!payoutInvoice };
+  }
+
+  /**
+   * Set or update a player's payout invoice after registration.
+   * Useful when players submit it async (e.g. scan QR on a second screen).
+   * @param {string} playerId
+   * @param {string} payoutInvoice - BOLT11 invoice from the player's Fiber node
+   */
+  setPayoutInvoice(playerId, payoutInvoice) {
+    if (!this.players[playerId]) throw new Error(`Unknown player: ${playerId}`);
+    this.players[playerId].payoutInvoice = payoutInvoice;
+    console.log(`[Tournament] Payout invoice set for ${this.players[playerId].name} ✅`);
+    this.emit('payout_invoice_set', { playerId, name: this.players[playerId].name });
   }
 
   /**
@@ -374,25 +405,40 @@ class Tournament extends EventEmitter {
       const p = this.players[pid];
       if (!p) continue;
 
-      console.log(`[Tournament] Paying ${p.name}: ${payout_ckb} CKB`);
+      const reason = share === 1.0 ? 'winner_takes_all' : `top2_${Math.round(share * 100)}pct`;
+      console.log(`[Tournament] Paying ${p.name}: ${payout_ckb} CKB (${reason})`);
 
-      try {
-        // To pay a player, we need their invoice.
-        // In a real tournament: players submit a payout invoice during registration.
-        // For demo: we use the payment_hash from their entry to look up their node,
-        // or the player registers a payout invoice separately.
-        // Here we emit 'payout_needed' so the UI/host can handle it.
+      if (p.payoutInvoice) {
+        // ── Autonomous payout — player pre-registered their invoice ──────────
+        try {
+          console.log(`[Tournament] Sending autonomous payout to ${p.name}...`);
+          const result = await this.fiber.sendPayment(p.payoutInvoice);
+          console.log(`[Tournament] ✅ Payout sent to ${p.name}:`, result?.payment_hash || result);
+          this.emit('payout_sent', {
+            playerId: pid,
+            name: p.name,
+            amount_ckb: payout_ckb,
+            reason,
+            result,
+          });
+          results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'sent', result });
+        } catch (e) {
+          console.error(`[Tournament] ❌ Autonomous payout failed for ${p.name}:`, e.message);
+          // Fall back to manual — emit payout_needed so host can retry
+          this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, error: e.message });
+          results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
+        }
+      } else {
+        // ── Manual payout — no invoice registered, ask host ──────────────────
+        console.log(`[Tournament] ⚠️  No payout invoice for ${p.name} — emitting payout_needed`);
         this.emit('payout_needed', {
           playerId: pid,
           name: p.name,
           amount_ckb: payout_ckb,
-          reason: share === 1.0 ? 'winner_takes_all' : `top2_${Math.round(share * 100)}pct`,
+          reason,
+          hint: `Call t.sendPayout(invoice) or t.setPayoutInvoice('${pid}', invoice) then retry`,
         });
-
         results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'pending' });
-      } catch (e) {
-        console.error(`[Tournament] Payout failed for ${p.name}:`, e.message);
-        results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
       }
     }
 
@@ -571,21 +617,38 @@ if (require.main === module) {
       board.forEach((p, i) => console.log(`   ${i+1}. ${p.name}: ${p.score}`));
     });
 
-    t.on('payout_needed', ({ name, amount_ckb }) => {
-      console.log(`\n💸 Payout needed: ${amount_ckb} CKB → ${name}`);
-      console.log('   (Provide winner\'s payout invoice to tm.get(id).sendPayout(invoice))');
+    t.on('payout_sent', ({ name, amount_ckb, result }) => {
+      console.log(`\n💸 Payout SENT: ${amount_ckb} CKB → ${name}`);
+      console.log(`   Payment hash: ${result?.payment_hash || '(see result)'}`);
     });
 
-    t.on('complete', ({ winner, totalPot }) => {
+    t.on('payout_needed', ({ name, amount_ckb, hint }) => {
+      console.log(`\n⚠️  Manual payout needed: ${amount_ckb} CKB → ${name}`);
+      if (hint) console.log(`   Hint: ${hint}`);
+    });
+
+    t.on('complete', ({ winner, totalPot, payouts }) => {
       console.log(`\n✅ Tournament complete. Pot: ${totalPot} CKB`);
+      const sent    = payouts.filter(p => p.status === 'sent').length;
+      const pending = payouts.filter(p => p.status === 'pending').length;
+      const failed  = payouts.filter(p => p.status === 'failed').length;
+      console.log(`   Payouts: ${sent} sent, ${pending} pending, ${failed} failed`);
       process.exit(0);
     });
 
     t.on('error', e => { console.error('\n❌ Error:', e.message); });
 
     // Register demo player (REQUIRE_PAYMENT=false skips invoice check for demo)
+    // Set PAYOUT_INVOICE env var to test autonomous payout path:
+    //   PAYOUT_INVOICE=fibb1... node src/tournament-manager.js
     process.env.REQUIRE_PAYMENT = 'false';
-    await t.addPlayer('player1', 'Player 1');
+    const payoutInvoice = process.env.PAYOUT_INVOICE || null;
+    if (payoutInvoice) {
+      console.log('💰 Payout invoice provided — autonomous payout will fire on win\n');
+    } else {
+      console.log('⚠️  No PAYOUT_INVOICE set — manual payout path (payout_needed event)\n');
+    }
+    await t.addPlayer('player1', 'Player 1', { payoutInvoice });
 
     // Start immediately (no payment required in demo mode)
     t.markPaid('player1');
