@@ -108,8 +108,20 @@ class RamEngine extends EventEmitter {
 
   async _poll() {
     if (!this.gameDef || !this.running) return;
-    const reads = Object.entries(this.gameDef.addresses).map(async ([id, def]) => {
-      const value = await this.ra.readMemory(def.addr, def.size || 1);
+    // Support both {addresses: {id: {addr, size}}} and {ram_addresses: [{name, address, type}]}
+    let addrEntries;
+    if (this.gameDef.addresses && typeof this.gameDef.addresses === 'object' && !Array.isArray(this.gameDef.addresses)) {
+      addrEntries = Object.entries(this.gameDef.addresses).map(([id, def]) => ({ id, addr: def.addr, size: def.size || 1 }));
+    } else {
+      const raw = this.gameDef.ram_addresses || this.gameDef.addresses || {};
+      if (Array.isArray(raw)) {
+        addrEntries = raw.map(def => ({ id: def.name || def.id, addr: def.address, size: def.size || 1 }));
+      } else {
+        addrEntries = Object.entries(raw).map(([id, def]) => ({ id, addr: def.address || def.addr, size: def.size || 1 }));
+      }
+    }
+    const reads = addrEntries.map(async ({ id, addr, size }) => {
+      const value = await this.ra.readMemory(addr, size);
       return { id, value };
     });
     const results = await Promise.all(reads);

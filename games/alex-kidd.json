@@ -1,0 +1,56 @@
+{
+  "id": "alex-kidd",
+  "name": "Alex Kidd in Miracle World",
+  "system": "mastersystem",
+  "rom_name": "Alex Kidd in Miracle World (USA, Europe, Brazil) (Rev 1).sms",
+  "core": "genesis_plus_gx",
+  "description": "Classic SMS platformer built into the console BIOS. Money/score and lives tracking.",
+
+  "ram_addresses": {
+    "lives": {
+      "address": "0xC02F9",
+      "type": "uint8",
+      "notes": "Lives — inferred from Game Genie code 7EC-2F9-3B7. Needs live verification.",
+      "confidence": "medium"
+    },
+    "money": {
+      "address": "0xC030",
+      "type": "uint16_be",
+      "notes": "Money/score at 0xC030. Source: cheat code community docs (FFC030). Needs verification.",
+      "confidence": "medium"
+    },
+    "score": {
+      "address": "0xC032",
+      "type": "uint16_be",
+      "notes": "Player score at 0xC032. Source: cheat code docs. Needs verification.",
+      "confidence": "medium"
+    }
+  },
+
+  "tournament_modes": [
+    {
+      "id": "highest_score",
+      "name": "Score Attack",
+      "description": "Highest score/money collected wins",
+      "tracked_field": "money",
+      "win_condition": "highest",
+      "time_limit_minutes": 15
+    },
+    {
+      "id": "survival",
+      "name": "Survival",
+      "description": "Last player with lives wins",
+      "tracked_field": "lives",
+      "win_condition": "last_standing",
+      "time_limit_minutes": 20
+    }
+  ],
+
+  "notes": [
+    "⚠️ RAM addresses need live verification with RetroArch memory viewer",
+    "Game Genie codes use different address encoding — 0xC02F9 is decoded estimate",
+    "Money acts as the primary score metric in this game",
+    "Iconic SMS title — good nostalgia factor for tournament",
+    "Built into original SMS BIOS — everyone recognises it"
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "id": "tetris-nes",
+  "name": "Tetris",
+  "system": "nes",
+  "rom_name": "Tetris (USA).nes",
+  "core": "fceumm",
+  "description": "The universal classic. Highest score or most lines cleared wins. No explanation needed.",
+
+  "ram_addresses": {
+    "score_lo": {
+      "address": "0x0073",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "Score ones & tens digits (BCD). Source: libretro cheat15"
+    },
+    "score_mid": {
+      "address": "0x0074",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "Score hundreds & thousands digits (BCD). Source: libretro cheat16"
+    },
+    "score_hi": {
+      "address": "0x0075",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "Score ten-thousands & hundred-thousands digits (BCD). Source: libretro cheat17"
+    },
+    "lines_lo": {
+      "address": "0x0070",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "Total lines cleared — ones & tens. Source: libretro cheat26"
+    },
+    "lines_hi": {
+      "address": "0x0071",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "Total lines cleared — hundreds digit. Source: libretro cheat27"
+    },
+    "level": {
+      "address": "0x0064",
+      "type": "uint8",
+      "notes": "Current level (0-9+). Source: libretro cheat13"
+    },
+    "next_piece": {
+      "address": "0x00BF",
+      "type": "uint8",
+      "notes": "Next piece type (0-6)"
+    }
+  },
+
+  "score_format": {
+    "type": "bcd_multi",
+    "addresses": ["score_hi", "score_mid", "score_lo"],
+    "notes": "3 BCD bytes = 6 decimal digits. Max score: 999999"
+  },
+
+  "tournament_modes": [
+    {
+      "id": "highest_score",
+      "name": "Score Attack",
+      "description": "Highest score after a fixed time (5 min) or until game over wins",
+      "tracked_field": "score",
+      "win_condition": "highest",
+      "time_limit_minutes": 5,
+      "recommended_settings": {
+        "start_level": 0,
+        "game_type": "A-TYPE"
+      }
+    },
+    {
+      "id": "most_lines",
+      "name": "Line Race",
+      "description": "First to clear 40 lines wins",
+      "tracked_field": "lines",
+      "win_condition": "first_to_value",
+      "target_value": 40,
+      "time_limit_minutes": 5
+    },
+    {
+      "id": "highest_level",
+      "name": "Level Rush",
+      "description": "Highest level reached before game over wins",
+      "tracked_field": "level",
+      "win_condition": "highest",
+      "time_limit_minutes": 10
+    }
+  ],
+
+  "notes": [
+    "Score stored as 3-byte BCD — decode: hi*10000 + mid*100 + lo (each byte = 2 BCD digits)",
+    "Universally known — zero learning curve for players",
+    "Score Attack on level 0 is the fairest competitive format",
+    "No lives mechanic — game ends when stack reaches top",
+    "fceumm is the standard accurate NES core"
+  ]
+}

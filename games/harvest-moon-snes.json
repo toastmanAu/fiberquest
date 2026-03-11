@@ -1,0 +1,117 @@
+{
+  "id": "harvest-moon-snes",
+  "title": "Harvest Moon",
+  "platform": "snes",
+  "system": "snes",
+  "core": "snes9x",
+  "rom": "~/roms/snes/Harvest Moon (USA).sfc",
+  "rom_alt": "~/roms/snes/Harvest Moon (USA).7z",
+  "genre": "simulation",
+  "year": 1996,
+  "players": 1,
+  "tournament_format": "score_attack",
+  "tournament_modes": [
+    {
+      "id": "gold_race",
+      "name": "Gold Rush — Most money in Year 1",
+      "description": "Players race to accumulate the most gold (G) by the end of in-game Year 1 (Spring Y1 to Winter Y4). Single player each, compare final totals.",
+      "win_condition": "highest_gold",
+      "session_length_minutes": 60,
+      "note": "Year 1 = 4 seasons × 30 days = 120 in-game days. Roughly 30–60 min real time depending on play speed."
+    },
+    {
+      "id": "single_season",
+      "name": "One Season Sprint — Most gold after Spring Y1",
+      "description": "Spring only (30 days). Plant turnips on Day 1, ship everything before Day 30. Fastest to accumulate wins.",
+      "win_condition": "highest_gold",
+      "session_length_minutes": 15,
+      "note": "Very quick format, good for live event side-game or warmup."
+    }
+  ],
+  "addresses": [
+    {
+      "name": "gold_lo",
+      "description": "Player gold — low byte",
+      "address": "0x1F04",
+      "type": "uint8",
+      "note": "Gold is stored as 3 bytes at 0x1F04–0x1F06 (little-endian 24-bit). Combine for full value."
+    },
+    {
+      "name": "gold_mid",
+      "description": "Player gold — mid byte",
+      "address": "0x1F05",
+      "type": "uint8"
+    },
+    {
+      "name": "gold_hi",
+      "description": "Player gold — high byte",
+      "address": "0x1F06",
+      "type": "uint8"
+    },
+    {
+      "name": "gold_combined",
+      "description": "Player gold — full value (read as uint24 LE: 0x1F04 + 0x1F05<<8 + 0x1F06<<16)",
+      "address": "0x1F04",
+      "type": "uint24_le",
+      "confidence": "medium",
+      "note": "From AR code 7E1F04/05/06. SNES bank 7E = WRAM. Verify via memory viewer."
+    },
+    {
+      "name": "day",
+      "description": "Current day of season (1–30)",
+      "address": "0x1F1A",
+      "type": "uint8",
+      "confidence": "medium",
+      "note": "From AR day modifier code. Exact offset TBD — verify live."
+    },
+    {
+      "name": "season",
+      "description": "Current season (0=Spring, 1=Summer, 2=Fall, 3=Winter)",
+      "address": "0x1F18",
+      "type": "uint8",
+      "confidence": "low",
+      "note": "Estimated — near day address. Needs live verification."
+    },
+    {
+      "name": "year",
+      "description": "Current year (0-indexed)",
+      "address": "0x1F1C",
+      "type": "uint8",
+      "confidence": "low",
+      "note": "Estimated — near season/day block. Needs live verification."
+    },
+    {
+      "name": "grass_seed",
+      "description": "Grass seed quantity",
+      "address": "0x0927",
+      "type": "uint8",
+      "confidence": "high",
+      "note": "From AR code 7E0927FF (infinite grass seed)"
+    },
+    {
+      "name": "turnip_seed",
+      "description": "Turnip seed quantity",
+      "address": "0x0928",
+      "type": "uint8",
+      "confidence": "high"
+    },
+    {
+      "name": "potato_seed",
+      "description": "Potato seed quantity",
+      "address": "0x0929",
+      "type": "uint8",
+      "confidence": "high"
+    }
+  ],
+  "tournament_notes": [
+    "Single-player game — tournament format is parallel sessions (two players, same starting conditions, compare gold at end of season/year)",
+    "Best format: Spring Y1 sprint — plant turnips Day 1, ship by Day 28, compare gold on Day 30",
+    "Hardcore format: full Year 1 run — requires trust/honor system or screen recording",
+    "Entry fee held in Fiber channel, released to highest-gold player at agreed checkpoint",
+    "Gold display: top of screen in-game. Easily readable for live streaming.",
+    "IMPORTANT: Gold addresses are MEDIUM confidence — verify 0x1F04-06 live before using for payouts"
+  ],
+  "confidence_overall": "medium",
+  "needs_verification": ["gold_combined address 0x1F04", "day/season/year addresses"],
+  "verification_method": "Open RetroArch memory viewer, start new game, earn first gold from selling crops, confirm 0x1F04-06 changes accordingly"
+}

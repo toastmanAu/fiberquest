@@ -1,0 +1,50 @@
+{
+  "id": "pac-man-arcade",
+  "name": "Pac-Man",
+  "system": "arcade",
+  "rom_name": "puckman.zip",
+  "core": "fbneo",
+  "description": "The original arcade score attack. Everyone knows it. Pure skill — highest score wins.",
+
+  "ram_addresses": {
+    "score_p1": {
+      "address": "0x4E80",
+      "type": "uint8_array",
+      "length": 3,
+      "format": "bcd",
+      "notes": "P1 score — BCD encoded. Address from MAME memory map / MAME Cheat database.",
+      "confidence": "medium"
+    },
+    "lives": {
+      "address": "0x4BE0",
+      "type": "uint8",
+      "notes": "Lives remaining",
+      "confidence": "medium"
+    },
+    "level": {
+      "address": "0x4E00",
+      "type": "uint8",
+      "notes": "Current level/maze number",
+      "confidence": "medium"
+    }
+  },
+
+  "tournament_modes": [
+    {
+      "id": "highest_score",
+      "name": "Score Attack",
+      "description": "Highest score when all lives are lost wins.",
+      "tracked_field": "score_p1",
+      "win_condition": "highest",
+      "time_limit_minutes": 10
+    }
+  ],
+
+  "notes": [
+    "⚠️ RAM addresses need verification — Pac-Man arcade RAM map varies by ROM version",
+    "ROM: puckman.zip (Japanese original) or pacman.zip (US version) — addresses may differ",
+    "MAME cheat XML database is the best source: https://www.mamecheat.co.uk/",
+    "FBNeo core handles Pac-Man well — confirmed in libretro-database",
+    "Universally recognised — strongest nostalgia factor of any game"
+  ]
+}

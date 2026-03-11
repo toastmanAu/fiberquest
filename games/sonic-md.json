@@ -1,0 +1,50 @@
+{
+  "id": "sonic-the-hedgehog-md",
+  "title": "Sonic the Hedgehog",
+  "platform": "megadrive",
+  "core": "genesis_plus_gx",
+  "rom": "~/roms/megadrive/Sonic The Hedgehog (USA, Europe).zip",
+  "tournament_format": "score_attack",
+  "description": "Score attack — most points after completing a fixed set of acts wins. Ring count contributes to score.",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0xFFFE12",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE12:0009. Lives. Poll at 0xFE12."
+    },
+    "rings": {
+      "address": "0xFFFE20",
+      "size": 2,
+      "type": "uint16_be",
+      "encoding": "decimal",
+      "notes": "AR: FFFE20:00C8. Ring count (16-bit BE). Poll at 0xFE20."
+    },
+    "score": {
+      "address": "0xFFFE26",
+      "size": 4,
+      "type": "uint32_be",
+      "encoding": "decimal",
+      "notes": "Score (32-bit BE). Confirmed TCRF location for Sonic 1 MD."
+    },
+    "stage_act": {
+      "address": "0xFFFE10",
+      "size": 2,
+      "type": "uint16_be",
+      "encoding": "hex",
+      "notes": "AR: FFFE10:XXYY — XX=stage (0-5), YY=act (0-2). Stage/act indicator."
+    },
+    "timer_minutes": {
+      "address": "0xFFFE24",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "Act timer minutes. Part of FFFE24-FFFE26 timer bytes."
+    }
+  },
+  "win_condition": "highest_score",
+  "tournament_rules": "Score attack through Green Hill Zone (3 acts). Highest score wins. Simultaneous start, same save state. Rings held at end of act add time bonus to score.",
+  "confidence": "high",
+  "sources": ["libretro-database/cht MD AR: FFFE12 lives, FFFE20 rings, FFFE10 stage/act", "TCRF Sonic 1 MD RAM map"]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "mortal-kombat-sms",
+  "name": "Mortal Kombat (Master System)",
+  "system": "mastersystem",
+  "rom_name": "Mortal Kombat (Europe, Brazil).sms",
+  "core": "genesis_plus_gx",
+  "description": "SMS port of MK. Surprisingly solid. HP tracking same concept as SNES version.",
+
+  "ram_addresses": {
+    "p1_health": {
+      "address": "0xC488",
+      "type": "uint8",
+      "notes": "P1 health (max 0x49=73). Source: libretro cheat0/8 (00C4-88xx)"
+    },
+    "p2_health": {
+      "address": "0xC48A",
+      "type": "uint8",
+      "notes": "P2 health (max 0x48=72). Source: libretro cheat1/9 (00C4-8Axx)"
+    },
+    "timer": {
+      "address": "0xC436",
+      "type": "uint8",
+      "notes": "Round timer. Source: libretro cheat3 (00C4-3609)"
+    }
+  },
+
+  "tournament_modes": [
+    {
+      "id": "first_to_two",
+      "name": "Best of 3 Rounds",
+      "description": "First player to win 2 rounds wins.",
+      "tracked_fields": ["p1_health", "p2_health"],
+      "win_condition": "opponent_at_zero",
+      "time_limit_minutes": 10
+    }
+  ],
+
+  "notes": [
+    "SMS Action Replay format: 00C4-88XX = address 0xC488, value 0xXX",
+    "Blood code: At title screen: Up, Up, Down, Down, Left, Right, Left, Right",
+    "Backup option if SNES MK ROM not available — same game concept"
+  ]
+}

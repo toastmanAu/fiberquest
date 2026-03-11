@@ -1,0 +1,37 @@
+{
+  "id": "donkey-kong-country-snes",
+  "title": "Donkey Kong Country",
+  "platform": "snes",
+  "core": "snes9x",
+  "rom": "~/roms/snes/Donkey Kong Country (USA) (Rev 2).zip",
+  "tournament_format": "race",
+  "description": "Level race — first to complete a set of levels wins. Track lives as tiebreaker.",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0xA863",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: B6A863:AD (infinite lives cheat = write AD here). Actual live lives value at this address."
+    },
+    "kong_status": {
+      "address": "0x8FA4",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: BF8FA4:03 = both Kongs. Bit flags: bit0=DK alive, bit1=Diddy alive."
+    },
+    "level_complete": {
+      "address": "0x8E84",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: BF8E84:FF = Return of Kong flag. Changes on level exit."
+    }
+  },
+  "win_condition": "race_completion",
+  "tournament_rules": "Race format — first player to complete World 1 (5 levels + boss) wins. Simultaneous start on separate machines or split-screen if supported. Lives count as tiebreaker if tied.",
+  "confidence": "medium",
+  "notes": "AR codes use bank addressing (BF prefix = bank $BF). Actual WRAM addresses need live verification — subtract $7E0000 offset. Verify 0xA863 is correct WRAM lives location.",
+  "sources": ["libretro-database/cht SNES AR: B6A863 lives, BF8FA4 kong status"]
+}

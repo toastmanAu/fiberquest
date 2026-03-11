@@ -1,0 +1,114 @@
+{
+  "id": "streets-of-rage-2",
+  "name": "Streets of Rage 2",
+  "system": "megadrive",
+  "rom_name": "Streets of Rage 2 (USA).md",
+  "core": "genesis_plus_gx",
+  "description": "Beat-em-up classic. Players fight through stages; highest score or most KOs wins the tournament.",
+
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0xFFEF83",
+      "type": "uint8",
+      "notes": "Player 1 lives remaining"
+    },
+    "p1_health": {
+      "address": "0xFFEF81",
+      "type": "uint8",
+      "notes": "Player 1 health (max 0x68 = 104)"
+    },
+    "p1_score_lo": {
+      "address": "0xFFEF96",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "P1 score low digits (BCD)"
+    },
+    "p1_score_mid": {
+      "address": "0xFFEF97",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "P1 score mid digits (BCD)"
+    },
+    "p1_score_hi": {
+      "address": "0xFFEF98",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "P1 score high digits (BCD)"
+    },
+    "p2_lives": {
+      "address": "0xFFF083",
+      "type": "uint8",
+      "notes": "Player 2 lives remaining (offset +0x100 from P1)"
+    },
+    "p2_health": {
+      "address": "0xFFF081",
+      "type": "uint8",
+      "notes": "Player 2 health"
+    },
+    "p2_score_lo": {
+      "address": "0xFFF096",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "P2 score low digits (BCD)"
+    },
+    "p2_score_mid": {
+      "address": "0xFFF097",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "P2 score mid digits (BCD)"
+    },
+    "p2_score_hi": {
+      "address": "0xFFF098",
+      "type": "uint8",
+      "format": "bcd",
+      "notes": "P2 score high digits (BCD)"
+    },
+    "stage": {
+      "address": "0xFFFC3C",
+      "type": "uint8",
+      "notes": "Current stage/level"
+    }
+  },
+
+  "score_format": {
+    "type": "bcd_multi",
+    "addresses": ["p1_score_hi", "p1_score_mid", "p1_score_lo"],
+    "notes": "Combine 3 BCD bytes: hi*10000 + mid*100 + lo (each byte is 2 BCD digits)"
+  },
+
+  "tournament_modes": [
+    {
+      "id": "highest_score",
+      "name": "Score Attack",
+      "description": "Highest score after N stages wins",
+      "tracked_field": "p1_score",
+      "win_condition": "highest",
+      "time_limit_minutes": 15
+    },
+    {
+      "id": "survival",
+      "name": "Survival",
+      "description": "Last player with lives remaining wins",
+      "tracked_field": "p1_lives",
+      "win_condition": "last_standing",
+      "time_limit_minutes": 20
+    },
+    {
+      "id": "speed_run",
+      "name": "Stage Clear",
+      "description": "First to clear Stage 1 wins",
+      "tracked_field": "stage",
+      "win_condition": "first_to_value",
+      "target_value": 2,
+      "time_limit_minutes": 10
+    }
+  ],
+
+  "notes": [
+    "Score is stored in BCD (Binary-Coded Decimal) format — each byte represents 2 decimal digits",
+    "P1 player data block starts at 0xFFEF00, P2 at 0xFFF000",
+    "Lives address 0xFFEF83 confirmed via Action Replay cheat codes (libretro-database)",
+    "Score addresses 0xFFEF96-98 sourced from community RAM map — verify with RetroArch memory viewer on first run",
+    "genesis_plus_gx is the recommended accurate core for Mega Drive"
+  ]
+}

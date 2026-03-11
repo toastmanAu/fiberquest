@@ -1,0 +1,53 @@
+{
+  "id": "sonic-the-hedgehog-2-md",
+  "title": "Sonic the Hedgehog 2",
+  "platform": "megadrive",
+  "core": "genesis_plus_gx",
+  "rom": "~/roms/megadrive/Sonic The Hedgehog 2 (World) (Rev A).md",
+  "tournament_format": "score_attack",
+  "description": "Score attack or co-op race — most rings/score after completing Emerald Hill Zone wins. Also supports 2-player split-screen race mode (Sonic vs Tails).",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0xFFFE12",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE12:0009. Lives. Same address as Sonic 1. Poll at 0xFE12."
+    },
+    "rings": {
+      "address": "0xFFFE20",
+      "size": 2,
+      "type": "uint16_be",
+      "encoding": "decimal",
+      "notes": "AR: FFFE20:00C8. Ring count (16-bit BE). Poll at 0xFE20."
+    },
+    "score": {
+      "address": "0xFFFE26",
+      "size": 4,
+      "type": "uint32_be",
+      "encoding": "decimal",
+      "notes": "Score (32-bit BE). Same layout as Sonic 1 — confirmed TCRF location."
+    },
+    "stage_act": {
+      "address": "0xFFFE10",
+      "size": 2,
+      "type": "uint16_be",
+      "encoding": "hex",
+      "notes": "AR: FFFE10:XXYY — XX=stage (0-7), YY=act (0-1). Stage/act indicator. Poll at 0xFE10."
+    },
+    "timer": {
+      "address": "0xFFFE24",
+      "size": 2,
+      "type": "uint16_be",
+      "encoding": "decimal",
+      "notes": "AR: FFFE24:0007. Act timer. Poll at 0xFE24."
+    }
+  },
+  "win_condition": "highest_score",
+  "tournament_rules": "Score attack — Emerald Hill Zone (2 acts). Highest score wins. Simultaneous start on same save state. Rings held at act end contribute to score bonus. 2-player split-screen race also viable: Sonic vs Tails, first to finish Zone 1 wins.",
+  "confidence": "high",
+  "sources": [
+    "libretro-database/cht MD AR: FFFE12 lives, FFFE20 rings, FFFE10 stage/act, FFFE24 timer",
+    "TCRF Sonic 2 MD RAM map (same layout as Sonic 1)"
+  ]
+}

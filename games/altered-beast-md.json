@@ -1,0 +1,65 @@
+{
+  "id": "altered-beast-md",
+  "title": "Altered Beast",
+  "platform": "megadrive",
+  "core": "genesis_plus_gx",
+  "rom": "~/roms/megadrive/Altered Beast (USA, Europe).zip",
+  "tournament_format": "survival",
+  "description": "Co-op arcade survival — track lives and progress through levels. Most levels cleared wins.",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0xFFB120",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFB120:03. P1 lives. Poll at 0xB120."
+    },
+    "p2_lives": {
+      "address": "0xFFB126",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFB126:03. P2 lives. Poll at 0xB126."
+    },
+    "p1_health": {
+      "address": "0xFFCF10",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFCF10:0C. P1 health. Poll at 0xCF10."
+    },
+    "p2_health": {
+      "address": "0xFFCF50",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFCF50:7F. P2 health. Poll at 0xCF50."
+    },
+    "p1_power_up": {
+      "address": "0xFFD02B",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFD02B. P1 power-up level (beast transformation stage 0-3)."
+    },
+    "p2_power_up": {
+      "address": "0xFFD06B",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFD06B. P2 power-up level."
+    },
+    "stage": {
+      "address": "0xFFFE15",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE15 stage select. Current stage."
+    }
+  },
+  "win_condition": "last_lives_standing",
+  "tournament_rules": "Arcade co-op — track which player survives furthest through stages. Tiebreaker: most lives at game over. Power-up level (beast form) is secondary ranking metric.",
+  "confidence": "high",
+  "notes": "MD version preferred over SMS — better graphics, tighter controls, 2P simultaneous co-op is smoother.",
+  "sources": ["libretro-database/cht MD AR: FFB120 P1 lives, FFCF10 P1 health, FFB126 P2 lives, FFCF50 P2 health"]
+}

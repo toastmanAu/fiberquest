@@ -1,0 +1,76 @@
+{
+  "id": "sonic-sms",
+  "name": "Sonic the Hedgehog (Master System)",
+  "system": "mastersystem",
+  "rom_name": "Sonic the Hedgehog (USA, Europe).sms",
+  "core": "genesis_plus_gx",
+  "description": "8-bit Sonic on SMS. Score attack or fastest zone clear.",
+
+  "ram_addresses": {
+    "score": {
+      "address": "0xD2BA",
+      "type": "uint32_be",
+      "notes": "Score — 4 bytes, big-endian. Source: TCRF RAM map"
+    },
+    "lives": {
+      "address": "0xD246",
+      "type": "uint8",
+      "notes": "Lives remaining. Source: TCRF RAM map"
+    },
+    "current_act": {
+      "address": "0xD23E",
+      "type": "uint8",
+      "notes": "Current act number. Source: TCRF RAM map"
+    },
+    "rings": {
+      "address": "0xD2AA",
+      "type": "uint8",
+      "notes": "Current ring count"
+    },
+    "emeralds": {
+      "address": "0xD27F",
+      "type": "uint8",
+      "notes": "Chaos Emeralds collected"
+    },
+    "timer_ms": {
+      "address": "0xD2D0",
+      "type": "uint8",
+      "notes": "Timer milliseconds"
+    }
+  },
+
+  "tournament_modes": [
+    {
+      "id": "highest_score",
+      "name": "Score Attack",
+      "description": "Highest score after 3 acts wins",
+      "tracked_field": "score",
+      "win_condition": "highest",
+      "time_limit_minutes": 15
+    },
+    {
+      "id": "speed_run",
+      "name": "Zone 1 Speedrun",
+      "description": "Fastest time to clear Green Hill Zone Act 3",
+      "tracked_field": "current_act",
+      "win_condition": "first_to_value",
+      "target_value": 3,
+      "time_limit_minutes": 10
+    },
+    {
+      "id": "emerald_hunt",
+      "name": "Emerald Collector",
+      "description": "Most Chaos Emeralds collected",
+      "tracked_field": "emeralds",
+      "win_condition": "highest",
+      "time_limit_minutes": 20
+    }
+  ],
+
+  "notes": [
+    "RAM map sourced from TCRF (The Cutting Room Floor) — highly reliable",
+    "Score is 4 bytes big-endian at 0xD2BA",
+    "genesis_plus_gx handles both Mega Drive and Master System ROMs",
+    "ROM extension is .sms for Master System"
+  ]
+}

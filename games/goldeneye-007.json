@@ -1,0 +1,89 @@
+{
+  "id": "goldeneye-007-n64",
+  "title": "GoldenEye 007",
+  "platform": "n64",
+  "core": "mupen64plus_next",
+  "rom": "~/roms/n64/GoldenEye 007 (USA).z64",
+  "tournament_format": "versus",
+  "description": "4-player multiplayer deathmatch — most kills in a time limit wins. The definitive couch multiplayer game.",
+  "ram_addresses": {
+    "p1_kills": {
+      "address": "0x079F1B",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 80079F1B. P1 total kills across all opponents. 8-bit value (0-255)."
+    },
+    "p2_kills": {
+      "address": "0x079F87",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 80079F87. P2 total kills. Offset +0x6C from P1 kills."
+    },
+    "p3_kills": {
+      "address": "0x079FFB",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 80079FFB. P3 total kills. Offset +0x6C from P2."
+    },
+    "p4_kills": {
+      "address": "0x07A06F",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 8007A06F. P4 total kills."
+    },
+    "p1_deaths": {
+      "address": "0x0CA53B",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 800CA53B. P1 deaths counter."
+    },
+    "p2_deaths": {
+      "address": "0x0CCFBB",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 800CCFBB. P2 deaths."
+    },
+    "p3_deaths": {
+      "address": "0x0CFA3B",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 800CFA3B. P3 deaths."
+    },
+    "p4_deaths": {
+      "address": "0x0D24BB",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 800D24BB. P4 deaths."
+    },
+    "p1_ammo_9mm": {
+      "address": "0x0CDC96",
+      "size": 2,
+      "type": "uint16_be",
+      "encoding": "decimal",
+      "notes": "AR: 810CDC96. P1 9mm ammo — use as proxy for alive/active state (0 = may be dead/respawning)."
+    },
+    "multiplayer_health_mode": {
+      "address": "0x02B499",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 8002B499:0039 = License to Kill mode (1-hit kills). Set to 0x39 for instant-kill tournament mode."
+    }
+  },
+  "win_condition": "most_kills",
+  "tournament_rules": "Multiplayer deathmatch. 5-minute timed match. Most kills wins. Recommended: License to Kill mode (0x39 at 0x02B499) for fast decisive rounds. Complex stage (Facility, Temple, or Bunker) agreed beforehand. All slappers or PP7 only for fairness.",
+  "confidence": "high",
+  "notes": "Kill addresses confirmed from libretro-database AR codes (7232 cheats, multiplayer section). P1-P4 kills at regular 0x6C byte offsets. Deaths at much larger offsets (~0x2A80 apart) — all confirmed from same cheat file.",
+  "sources": [
+    "libretro-database/cht N64 AR: 80079F1B P1 kills, 80079F87 P2 kills, 80079FFB P3 kills, 8007A06F P4 kills",
+    "libretro-database/cht N64 AR: 800CA53B P1 deaths, 800CCFBB P2, 800CFA3B P3, 800D24BB P4"
+  ]
+}

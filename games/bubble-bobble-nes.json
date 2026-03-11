@@ -1,0 +1,52 @@
+{
+  "id": "bubble-bobble-nes",
+  "title": "Bubble Bobble",
+  "platform": "nes",
+  "core": "fceumm",
+  "rom": "~/roms/nes/Bubble Bobble (USA, Europe).nes",
+  "tournament_format": "co-op_race",
+  "description": "2-player co-op — first pair to clear the most rounds wins. Or competitive: P1 vs P2, highest score after N rounds. 100-level classic with a perfect tournament arc.",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0x002E",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 002E:09. Bub (P1) lives. Starts at 3 (or 5/9 depending on start code)."
+    },
+    "p2_lives": {
+      "address": "0x0042",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 0042:09. Bob (P2) lives. Offset +0x14 from P1."
+    },
+    "round": {
+      "address": "0x0401",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 0401:00. Current round (0-indexed, 0 = round 1). 100 rounds total."
+    },
+    "timer": {
+      "address": "0x040D",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: 040D:32 = infinite time. Normal timer counts down (0x32 = 50 seconds)."
+    },
+    "p1_invincibility": {
+      "address": "0x003F",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "hex",
+      "notes": "AR: 003F:2F = invincible. Monitor for 0x2F = active power-up state."
+    }
+  },
+  "win_condition": "highest_round_or_score",
+  "tournament_rules": "2-player co-op race. Both players start simultaneously. First team to clear round 20 wins (or furthest round reached if time limit hit). Alternative: competitive mode — P1 vs P2 score after 10 rounds (track who pops more enemies). Recommend starting on round 1, 5 lives each.",
+  "confidence": "high",
+  "sources": [
+    "libretro-database/cht NES AR: 002E P1 lives, 0042 P2 lives, 0401 round, 040D timer"
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "id": "golden-axe-md",
+  "title": "Golden Axe",
+  "platform": "megadrive",
+  "core": "genesis_plus_gx",
+  "rom": "~/roms/megadrive/Golden Axe (World) (v1.1).zip",
+  "tournament_format": "survival",
+  "description": "Co-op beat-em-up — track lives and score. Highest combined score at end of game wins.",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0xFFFE7C",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE7C:03. P1 lives. Strip FF prefix for polling: 0xFE7C."
+    },
+    "p2_lives": {
+      "address": "0xFFFE8C",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE8C:03. P2 lives. Poll at 0xFE8C."
+    },
+    "p1_health": {
+      "address": "0xFFFE7E",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE7E:64. P1 health. Max = 0x64 (100)."
+    },
+    "p2_health": {
+      "address": "0xFFFE8E",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE8E:64. P2 health."
+    },
+    "p1_magic": {
+      "address": "0xFFFE80",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE80. P1 magic pot count."
+    },
+    "stage": {
+      "address": "0xFFFE2D",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE2D stage select. Current stage indicator."
+    },
+    "credits": {
+      "address": "0xFFFE34",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "AR: FFFE34:05. Credits remaining."
+    }
+  },
+  "win_condition": "last_lives_standing",
+  "tournament_rules": "Arcade survival mode — 2 players, track who survives furthest. Tiebreaker: most lives remaining at same death point. Duel mode also viable for 1v1.",
+  "confidence": "high",
+  "sources": ["libretro-database/cht MD AR: FFFE7C P1 lives, FFFE7E P1 health, FFFE8C P2 lives, FFFE8E P2 health"]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "super-mario-bros-3-nes",
+  "title": "Super Mario Bros. 3",
+  "platform": "nes",
+  "core": "fceumm",
+  "rom": "~/roms/nes/Super Mario Bros. 3 (USA) (Rev A).zip",
+  "tournament_format": "score_attack",
+  "description": "Timed score attack — most points accumulated in a fixed time window wins.",
+  "ram_addresses": {
+    "p1_lives": {
+      "address": "0x0736",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "Direct AR: 0736:63. Lives count."
+    },
+    "p1_score": {
+      "address": "0x07D7",
+      "size": 3,
+      "type": "bcd",
+      "encoding": "bcd",
+      "notes": "Score stored as BCD across 3 bytes. TCRF confirmed: 0x07D7-0x07D9."
+    },
+    "world": {
+      "address": "0x0727",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "Current world (0=World 1). TCRF RAM map."
+    },
+    "power_up": {
+      "address": "0x00ED",
+      "size": 1,
+      "type": "uint8",
+      "encoding": "decimal",
+      "notes": "Power-up state: 0=small, 1=super, 2=fire, 3=raccoon, etc."
+    },
+    "timer": {
+      "address": "0x05EE",
+      "size": 3,
+      "type": "bcd",
+      "encoding": "bcd",
+      "notes": "Level timer BCD: 05EE (hundreds), 05EF (tens), 05F0 (units)"
+    }
+  },
+  "win_condition": "highest_score",
+  "tournament_rules": "15-minute score attack. Start World 1-1 simultaneously. Most points wins. No warps — penalise if whistle used.",
+  "confidence": "high",
+  "sources": ["libretro-database/cht NES: 0736 lives, 0000ED power-up", "TCRF NES RAM map"]
+}

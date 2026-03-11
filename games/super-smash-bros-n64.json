@@ -1,0 +1,64 @@
+{
+  "id": "super-smash-bros-n64",
+  "name": "Super Smash Bros.",
+  "system": "n64",
+  "rom_name": "Super Smash Bros. (USA).z64",
+  "core": "mupen64plus_next",
+  "description": "4-player stock match. Last fighter standing wins the prize pool.",
+
+  "ram_addresses": {
+    "p1_stocks": {
+      "address": "0x0A4B43",
+      "type": "uint8",
+      "notes": "P1 lives/stocks remaining. Source: libretro-database cheat29"
+    },
+    "p2_stocks": {
+      "address": "0x0A4BB7",
+      "type": "uint8",
+      "notes": "P2 lives/stocks remaining. Source: libretro-database cheat30"
+    },
+    "p3_stocks": {
+      "address": "0x0A4C2B",
+      "type": "uint8",
+      "notes": "P3 lives/stocks remaining. Source: libretro-database cheat31"
+    },
+    "p4_stocks": {
+      "address": "0x0A4C9F",
+      "type": "uint8",
+      "notes": "P4 lives/stocks remaining. Source: libretro-database cheat32"
+    }
+  },
+
+  "tournament_modes": [
+    {
+      "id": "stock_match",
+      "name": "Stock Match",
+      "description": "4-player stock match (3 lives). Last player with stocks wins. Prize pool split by finish order.",
+      "tracked_fields": ["p1_stocks", "p2_stocks", "p3_stocks", "p4_stocks"],
+      "win_condition": "last_standing",
+      "recommended_settings": {
+        "stocks": 3,
+        "items": "off",
+        "stage": "Dreamland or Hyrule Castle (flat stages)"
+      },
+      "time_limit_minutes": 8
+    },
+    {
+      "id": "timed_match",
+      "name": "Timed KO Race",
+      "description": "Most KOs in 3 minutes wins. Track eliminations via stock decrements.",
+      "tracked_fields": ["p1_stocks", "p2_stocks", "p3_stocks", "p4_stocks"],
+      "win_condition": "most_kos",
+      "time_limit_minutes": 3
+    }
+  ],
+
+  "notes": [
+    "Stock addresses confirmed via libretro-database cheat file — reliable",
+    "mupen64plus_next is the recommended accurate N64 core",
+    "4-player support makes this ideal for tournament entry fees split 4 ways",
+    "KO count derived from stock decrements — no separate KO counter address needed",
+    "Recommend disabling items for competitive play",
+    "ROM extension .z64 (big-endian) or .n64 (little-endian) — both work with mupen64plus_next"
+  ]
+}
