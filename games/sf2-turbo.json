@@ -1,0 +1,39 @@
+{
+  "id": "sf2-turbo",
+  "name": "Street Fighter II Turbo: Hyper Fighting",
+  "core": "fbalpha2012_cps1",
+  "notes": "RAM addresses confirmed for CPS1 version. P1 HP at 0x0530, P2 HP at 0x0536.",
+  "addresses": {
+    "p1_hp":      { "addr": "0x0530", "size": 1 },
+    "p2_hp":      { "addr": "0x0536", "size": 1 },
+    "p1_rounds":  { "addr": "0x021A", "size": 1 },
+    "p2_rounds":  { "addr": "0x021B", "size": 1 },
+    "game_phase": { "addr": "0x0180", "size": 1 }
+  },
+  "events": [
+    {
+      "id": "p2_ko",
+      "description": "Player 2 is knocked out",
+      "trigger": { "address": "p2_hp", "condition": "reached_zero" },
+      "payment": { "direction": "p2_to_p1", "amount_ckb": 10 }
+    },
+    {
+      "id": "p1_ko",
+      "description": "Player 1 is knocked out",
+      "trigger": { "address": "p1_hp", "condition": "reached_zero" },
+      "payment": { "direction": "p1_to_p2", "amount_ckb": 10 }
+    },
+    {
+      "id": "match_win_p1",
+      "description": "Player 1 wins the match (2 rounds)",
+      "trigger": { "address": "p1_rounds", "condition": "changed_to", "value": 2 },
+      "payment": { "direction": "pot_to_winner", "amount_ckb": 100, "winner": "p1" }
+    },
+    {
+      "id": "match_win_p2",
+      "description": "Player 2 wins the match (2 rounds)",
+      "trigger": { "address": "p2_rounds", "condition": "changed_to", "value": 2 },
+      "payment": { "direction": "pot_to_winner", "amount_ckb": 100, "winner": "p2" }
+    }
+  ]
+}
