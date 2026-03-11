@@ -3,6 +3,7 @@
   "name": "Street Fighter II Turbo: Hyper Fighting",
   "core": "fbalpha2012_cps1",
   "notes": "RAM addresses confirmed for CPS1 version. P1 HP at 0x0530, P2 HP at 0x0536.",
+
   "addresses": {
     "p1_hp":      { "addr": "0x0530", "size": 1 },
     "p2_hp":      { "addr": "0x0536", "size": 1 },
@@ -10,6 +11,7 @@
     "p2_rounds":  { "addr": "0x021B", "size": 1 },
     "game_phase": { "addr": "0x0180", "size": 1 }
   },
+
   "events": [
     {
       "id": "p2_ko",
@@ -35,5 +37,87 @@
       "trigger": { "address": "p2_rounds", "condition": "changed_to", "value": 2 },
       "payment": { "direction": "pot_to_winner", "amount_ckb": 100, "winner": "p2" }
     }
-  ]
+  ],
+
+  "tournament": {
+    "supported_modes": ["time_limit", "score_threshold", "first_to_wins"],
+
+    "metrics": {
+      "rounds_won": {
+        "description": "Total rounds won across all matches",
+        "source": "event",
+        "event_ids": ["match_win_p1", "match_win_p2"],
+        "accumulate": "count_for_player"
+      },
+      "kos_landed": {
+        "description": "Total KOs landed",
+        "source": "event",
+        "event_ids": ["p1_ko", "p2_ko"],
+        "accumulate": "count_for_player"
+      }
+    },
+
+    "win_conditions": [
+      {
+        "id": "time_limit",
+        "label": "Most Rounds Won",
+        "description": "Play for a set duration — most rounds won at the end wins the pot",
+        "metric": "rounds_won",
+        "requires": ["duration_seconds"],
+        "tiebreak": "kos_landed"
+      },
+      {
+        "id": "score_threshold",
+        "label": "First to X Rounds",
+        "description": "First player to win N rounds claims the pot immediately",
+        "metric": "rounds_won",
+        "requires": ["target_score"],
+        "unlock": "immediate"
+      },
+      {
+        "id": "first_to_wins",
+        "label": "Best of N Matches",
+        "description": "First player to win N full matches takes the pot",
+        "metric": "rounds_won",
+        "requires": ["target_score"],
+        "unlock": "immediate"
+      }
+    ],
+
+    "payout_structures": [
+      {
+        "id": "winner_takes_all",
+        "label": "Winner Takes All",
+        "splits": [{ "place": 1, "percent": 100 }]
+      },
+      {
+        "id": "top2_split",
+        "label": "Top 2 Split (70/30)",
+        "splits": [
+          { "place": 1, "percent": 70 },
+          { "place": 2, "percent": 30 }
+        ],
+        "min_players": 2
+      },
+      {
+        "id": "top3_split",
+        "label": "Top 3 Split (60/30/10)",
+        "splits": [
+          { "place": 1, "percent": 60 },
+          { "place": 2, "percent": 30 },
+          { "place": 3, "percent": 10 }
+        ],
+        "min_players": 3
+      }
+    ],
+
+    "entry": {
+      "modes": ["fixed", "variable"],
+      "fixed_default_ckb": 100,
+      "variable_min_ckb": 10,
+      "variable_max_ckb": 10000
+    },
+
+    "cell_data_version": 1
+  }
 }

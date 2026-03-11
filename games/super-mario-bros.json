@@ -1,0 +1,133 @@
+{
+  "id": "super-mario-bros",
+  "name": "Super Mario Bros.",
+  "core": "fceumm",
+  "notes": "NES. RAM addresses well-documented. Lives at 0x075A, world at 0x075F, level at 0x0760, coins at 0x075E, score bytes at 0x07DD-0x07E2 (BCD, 6 digits).",
+
+  "addresses": {
+    "lives":       { "addr": "0x075A", "size": 1 },
+    "world":       { "addr": "0x075F", "size": 1 },
+    "level":       { "addr": "0x0760", "size": 1 },
+    "coins":       { "addr": "0x075E", "size": 1 },
+    "score_hi":    { "addr": "0x07DD", "size": 1 },
+    "score_mid":   { "addr": "0x07DE", "size": 1 },
+    "score_lo":    { "addr": "0x07DF", "size": 1 },
+    "game_state":  { "addr": "0x0770", "size": 1 }
+  },
+
+  "events": [
+    {
+      "id": "coin_collected",
+      "description": "Coin collected",
+      "trigger": { "address": "coins", "condition": "changed" },
+      "payment": { "direction": "player_to_escrow", "amount_ckb": 1 }
+    },
+    {
+      "id": "level_cleared",
+      "description": "Level cleared (level counter incremented)",
+      "trigger": { "address": "level", "condition": "changed" },
+      "payment": { "direction": "player_to_escrow", "amount_ckb": 20 }
+    },
+    {
+      "id": "life_lost",
+      "description": "Lost a life",
+      "trigger": { "address": "lives", "condition": "decreased_by_more_than", "value": 0 },
+      "payment": { "direction": "escrow_penalty", "amount_ckb": 5 }
+    },
+    {
+      "id": "game_over",
+      "description": "Game over (lives hit zero)",
+      "trigger": { "address": "lives", "condition": "reached_zero" },
+      "payment": { "direction": "tournament_end_signal" }
+    }
+  ],
+
+  "tournament": {
+    "supported_modes": ["time_limit", "score_threshold"],
+
+    "metrics": {
+      "score": {
+        "description": "In-game score (BCD decoded from RAM)",
+        "source": "address",
+        "address": "score_hi",
+        "bcd_bytes": ["score_hi", "score_mid", "score_lo"],
+        "accumulate": "raw_value"
+      },
+      "levels_cleared": {
+        "description": "Number of levels cleared",
+        "source": "event",
+        "event_ids": ["level_cleared"],
+        "accumulate": "count"
+      },
+      "coins_collected": {
+        "description": "Total coins collected",
+        "source": "event",
+        "event_ids": ["coin_collected"],
+        "accumulate": "count"
+      }
+    },
+
+    "win_conditions": [
+      {
+        "id": "time_limit",
+        "label": "Highest Score",
+        "description": "Play for a set duration — highest score wins",
+        "metric": "score",
+        "requires": ["duration_seconds"],
+        "tiebreak": "levels_cleared"
+      },
+      {
+        "id": "time_limit_levels",
+        "label": "Most Levels Cleared",
+        "description": "Play for a set duration — most levels cleared wins",
+        "metric": "levels_cleared",
+        "requires": ["duration_seconds"],
+        "tiebreak": "score"
+      },
+      {
+        "id": "score_threshold",
+        "label": "First to Score X",
+        "description": "First player to reach target score claims the pot",
+        "metric": "score",
+        "requires": ["target_score"],
+        "unlock": "immediate"
+      }
+    ],
+
+    "payout_structures": [
+      {
+        "id": "winner_takes_all",
+        "label": "Winner Takes All",
+        "splits": [{ "place": 1, "percent": 100 }]
+      },
+      {
+        "id": "top2_split",
+        "label": "Top 2 Split (70/30)",
+        "splits": [
+          { "place": 1, "percent": 70 },
+          { "place": 2, "percent": 30 }
+        ],
+        "min_players": 2
+      },
+      {
+        "id": "top3_split",
+        "label": "Top 3 Split (60/30/10)",
+        "splits": [
+          { "place": 1, "percent": 60 },
+          { "place": 2, "percent": 30 },
+          { "place": 3, "percent": 10 }
+        ],
+        "min_players": 3
+      }
+    ],
+
+    "entry": {
+      "modes": ["fixed", "variable"],
+      "fixed_default_ckb": 50,
+      "variable_min_ckb": 10,
+      "variable_max_ckb": 10000
+    },
+
+    "cell_data_version": 1
+  }
+}
