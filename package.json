@@ -1,0 +1,34 @@
+{
+  "name": "fiberquest",
+  "version": "0.1.0",
+  "description": "Retro gaming platform powered by Fiber Network micropayments",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "server": "node src/game-server.js",
+    "test:rpc": "node scripts/test-rpc.js",
+    "build": "electron-builder --linux",
+    "build:arm64": "electron-builder --linux --arm64",
+    "build:x64": "electron-builder --linux --x64"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.wyltek.fiberquest",
+    "productName": "FiberQuest",
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Game"
+    },
+    "extraMetadata": {
+      "main": "src/main.js"
+    }
+  }
+}
