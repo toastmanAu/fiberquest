@@ -7,28 +7,49 @@
 ## Project Context
 FiberQuest is a hackathon entry for "Claw & Order: CKB AI Agent Hackathon" (deadline March 25, 2026).
 
-**Mission:** Autonomous payment agent — a retro Texas Hold'em game where a Node.js sidecar autonomously executes Fiber Network micropayments based on game state. No human clicks payments; the agent does it.
+**Mission:** Autonomous tournament agent — players enter retro gaming tournaments via Fiber Network micropayments. A Node.js agent watches RetroArch RAM in real time, scores each player, and autonomously executes payouts when the tournament ends. No human clicks payments; the agent does it.
 
 **Judging priority:** Autonomy > Novelty > Completeness > Soundness > UX > Viability
 
+## Concept
+1. Tournament creator defines: game, win condition, duration/threshold, payout structure, entry fee
+2. Tournament cell created on CKB — entry fees locked with `since` time-lock + agent key
+3. Players open Fiber channels to the agent wallet and pay entry fee
+4. Players play — RAM engine polls RetroArch UDP, accumulates per-player scores/events
+5. Tournament ends (time or threshold) → agent builds unlock tx, pays winners via Fiber
+
 ## Architecture
 ```
-RetroArch (optional)         Node.js Sidecar (game-server.js)         Fiber Node (fnn)
-  UDP RAM poll      →→→       FGSP WebSocket protocol          →→→      JSON-RPC 8227
-  port 55355                  port 8765                                  (localhost-only)
+RetroArch (local)              Node.js Agent                    Fiber Node (fnn)
+  UDP RAM poll       →→→       ram-engine.js                →→→  JSON-RPC 8227
+  port 55355                   game def registry                  (localhost-only)
+                               tournament-manager.js
+                               agent-wallet.js (CCC)
 
 Electron (main.js)
   - IPC bridge via preload.js
-  - Hosts game server
+  - Hosts agent process
   - Renderer: renderer/index.html (retro UI, Press Start 2P)
 ```
 
 ## Key Files
-- `src/fiber-client.js` — Fiber Network RPC client (our own, first Node.js Fiber client)
-- `src/game-server.js` — FGSP v0.1 WebSocket server, Texas Hold'em state machine
+- `src/fiber-client.js` — Fiber Network RPC client (first open-source Node.js Fiber client)
+- `src/ram-engine.js` — Universal RetroArch UDP poller + game event engine
+- `src/tournament-manager.js` — Tournament cell creation, scoring, payout logic (TODO)
+- `src/agent-wallet.js` — CKB wallet, cell building, CCC integration (TODO)
 - `src/main.js` — Electron main process
 - `src/preload.js` — contextBridge IPC
 - `renderer/index.html` — Retro game UI
+- `games/*.json` — Game definitions (RAM addresses + events + tournament modes)
+
+## Game Definition Schema
+Each `games/<id>.json` defines:
+- `addresses` — RetroArch RAM addresses to watch
+- `events` — triggers + Fiber payment directions
+- `tournament.metrics` — what to accumulate (score, levels, rounds, etc.)
+- `tournament.win_conditions` — time_limit / score_threshold / first_to_wins
+- `tournament.payout_structures` — winner_takes_all / top2_split / top3_split
+- `tournament.entry` — fixed or variable stake
 
 ## Fiber RPC Facts (tested against live fnn v0.7.0)
 - Port 8227 is localhost-only — requires SSH tunnel from remote machines
@@ -38,14 +59,15 @@ Electron (main.js)
 - `local_balance` / `remote_balance` are hex strings in Shannons (1 CKB = 1e8 Shannon)
 
 ## Live Infrastructure
-- **ckbnode fiber:** 192.168.68.87, RPC 127.0.0.1:8227, 901 CKB local balance
-  - SSH tunnel to driveThree: `driveThree:8227 → ckbnode:127.0.0.1:8227` (already running)
-- **N100 fiber:** 192.168.68.79, RPC 127.0.0.1:8226 (needs funding for payments)
-- **Channel:** ckbnode ↔ N100, CHANNEL_READY, 901 CKB local / 0 remote
+- **ckbnode fiber:** 192.168.68.87, RPC 127.0.0.1:8227, ~900 CKB local balance
+  - SSH tunnel from Pi5: `localhost:18227 → ckbnode:127.0.0.1:8227`
+- **N100 fiber:** 192.168.68.79, RPC 127.0.0.1:8226 (needs funding)
+- **Channel:** ckbnode ↔ N100, CHANNEL_READY
+- **Network:** mainnet (testnet pivot when code is solid)
 
 ## Deliverables Needed (submission)
 1. ✅ Project summary
-2. Technical breakdown
+2. Technical breakdown (needs rewrite)
 3. ✅ Repo: https://github.com/toastmanAu/fiberquest
 4. Testable version link (needs live deployment)
 5. Screenshots or video
@@ -53,12 +75,12 @@ Electron (main.js)
 ## Stack Constraints
 - Node.js only (no Rust, no React) — keep it simple for hackathon speed
 - Electron for desktop cross-platform
-- No external databases — game state in memory
-- Fiber RPC via HTTP JSON-RPC (no SDK — we're building the SDK)
+- CCC (@ckb-ccc/core) for CKB transaction building
+- No external databases — tournament state in memory + on-chain cell
+- Fiber RPC via HTTP JSON-RPC
 
 ## Development Workflow
-- "Think deeply" before writing code
-- Verify Fiber calls with `node scripts/test-rpc.js http://localhost:8227`
-- Test game server standalone: `node src/game-server.js`
+- Verify Fiber calls: `node scripts/test-rpc.js http://localhost:18227`
+- Test RAM engine: `node src/ram-engine.js sf2-turbo`
 - Full Electron app: `npm start`
-- The SSH tunnel to ckbnode must be running: `ssh -f -N -L 8227:127.0.0.1:8227 orangepi@192.168.68.87`
+- SSH tunnel to ckbnode: `ssh -f -N -L 18227:127.0.0.1:8227 orangepi@192.168.68.87`

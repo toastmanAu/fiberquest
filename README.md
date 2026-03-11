@@ -1,29 +1,56 @@
 # FiberQuest
 
-> Retro gaming powered by Fiber Network micropayments — the first open-source Node.js Fiber client.
+> Retro gaming tournaments powered by Fiber Network micropayments — the first open-source Node.js Fiber client.
+
+Players enter tournaments, compete in retro games tracked via RetroArch RAM polling, and an autonomous agent pays out winners — all via CKB's Fiber Network. No centralised server. No manual payment clicks.
+
+## How It Works
+
+1. **Create a tournament** — choose game, win condition, duration, entry fee
+2. **Entry fee locked** — in a CKB cell with a `since` time-lock + agent key
+3. **Players connect** — open a Fiber channel to the agent wallet, pay entry via micropayment
+4. **Play** — RetroArch RAM engine watches game state in real time, scores each player
+5. **Payout** — when tournament ends, agent autonomously unlocks the cell and pays winners via Fiber
+
+## Architecture
+
+```
+RetroArch (local)              Node.js Agent                    Fiber Node (fnn)
+  UDP RAM poll       →→→       RAM Event Engine             →→→  JSON-RPC RPC
+  port 55355                   Tournament Manager                 (localhost)
+                               Agent Wallet (CCC)
+
+Electron Shell
+  Retro UI (Press Start 2P)
+  IPC bridge → agent process
+```
+
+## Game Definitions
+
+Games are defined in `games/*.json` — drop a new JSON to add any RetroArch game:
+
+```json
+{
+  "id": "super-mario-bros",
+  "addresses": { "score_hi": { "addr": "0x07DD" }, ... },
+  "events": [ { "id": "level_cleared", "trigger": {...}, "payment": {...} } ],
+  "tournament": {
+    "win_conditions": ["time_limit", "score_threshold"],
+    "payout_structures": ["winner_takes_all", "top2_split", "top3_split"],
+    "entry": { "modes": ["fixed", "variable"] }
+  }
+}
+```
+
+Built-in games: `sf2-turbo`, `super-mario-bros`
 
 ## Quick Start
 
 ```bash
 npm install
-npm run test:rpc        # Verify Fiber node connection
-npm run server          # Start game server standalone
-npm start               # Launch Electron app
-```
-
-## Architecture
-
-```
-fiberquest/
-├── src/
-│   ├── main.js          — Electron main process
-│   ├── preload.js       — IPC bridge (contextBridge)
-│   ├── fiber-client.js  — Fiber Network RPC client
-│   └── game-server.js   — FGSP WebSocket game server
-├── renderer/
-│   └── index.html       — Game UI (Press Start 2P, retro aesthetic)
-└── scripts/
-    └── test-rpc.js      — Live RPC test + schema documenter
+node scripts/test-rpc.js      # Verify Fiber node connection
+node src/ram-engine.js sf2-turbo  # Test RAM polling (RetroArch must be running)
+npm start                     # Launch Electron app
 ```
 
 ## Environment Variables
@@ -31,46 +58,31 @@ fiberquest/
 | Var | Default | Description |
 |-----|---------|-------------|
 | `FIBER_RPC_URL` | `http://127.0.0.1:8227` | Fiber node RPC endpoint |
-| `GAME_PORT` | `8765` | FGSP WebSocket server port |
+| `RA_HOST` | `127.0.0.1` | RetroArch UDP host |
 | `RA_PORT` | `55355` | RetroArch UDP port |
-| `NODE_ENV` | — | Set to `development` for DevTools |
+| `POLL_HZ` | `20` | RAM polling rate (Hz) |
+
+## Key Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/fiber-client.js` | Fiber Network RPC client (first open-source Node.js Fiber client) |
+| `src/ram-engine.js` | Universal RetroArch UDP poller + game event engine |
+| `src/tournament-manager.js` | Tournament cell creation, scoring, payout *(in progress)* |
+| `src/agent-wallet.js` | CKB wallet + CCC transaction building *(in progress)* |
+| `src/main.js` | Electron main process |
+| `renderer/index.html` | Retro game UI |
 
 ## Build for Pi5 (arm64)
 
 ```bash
 # On driveThree (x86_64)
-sudo apt install qemu-user-static binfmt-support
-docker run --privileged --rm tonistiigi/binfmt --install arm64
-
 npm run build:arm64
-# Output: dist/FiberQuest-0.1.0-arm64.AppImage
+# Output: dist/FiberQuest-arm64.AppImage
 ```
 
-## Fiber RPC Test
+## Hackathon
 
-```bash
-# Against local node
-node scripts/test-rpc.js
+Entry for [Claw & Order: CKB AI Agent Hackathon](https://github.com/nervosnetwork/fiber) — March 2026.
 
-# Against N100 tunnel
-node scripts/test-rpc.js http://localhost:8237
-
-# Against ckbnode via SSH tunnel
-ssh -L 8227:127.0.0.1:8227 ckbnode
-node scripts/test-rpc.js http://localhost:8227
-```
-
-## FGSP Protocol
-
-```
-Client → Server:
-  FGSP_CONNECT        { name, fiberNodeId }
-  FGSP_PLAYER_ACTION  { action: FOLD|CHECK|CALL|RAISE|ALL_IN, amount }
-  FGSP_PAYMENT_CONFIRM { paymentHash, amount_ckb }
-
-Server → Client:
-  FGSP_WELCOME        { playerId, name, state, buyInCkb }
-  FGSP_GAME_STATE_UPDATE { phase, players, pot, communityCards, currentPlayer, ... }
-  FGSP_PAYMENT_REQUEST { type, amount_ckb, invoice, description, expires_in }
-  FGSP_ERROR          { message }
-```
+**Judging criteria:** Autonomy · Novelty · Completeness · Soundness · UX · Viability
