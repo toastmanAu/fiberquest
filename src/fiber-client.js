@@ -144,14 +144,15 @@ class FiberClient {
    * @param {number} [opts.expiry] - Expiry in seconds (default 3600)
    */
   async newInvoice(amount, description, opts = {}) {
+    const { expiry, currency, ...rest } = opts;
     return this.rpc('new_invoice', [{
       amount: typeof amount === 'bigint'
         ? '0x' + amount.toString(16)
         : amount,
-      currency: opts.currency || 'Fibb',  // Required: "Fibb" for mainnet, "Fibt" for testnet
+      currency: currency || 'Fibb',
       description,
-      expiry: opts.expiry ? '0x' + opts.expiry.toString(16) : '0xe10',  // hex seconds
-      ...opts,
+      expiry: expiry ? '0x' + expiry.toString(16) : '0xe10',
+      ...rest,
     }]);
   }
 
