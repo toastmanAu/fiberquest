@@ -10,6 +10,7 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const GameServer = require('./game-server');
 const FiberClient = require('./fiber-client');
+const TournamentManager = require('./tournament-manager');
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ const CONFIG = {
 let mainWindow;
 let gameServer;
 let fiberClient;
+let tournamentManager;
 
 // ── Window ─────────────────────────────────────────────────────────────────
 
@@ -99,13 +101,16 @@ app.whenReady().then(async () => {
   const alive = await fiberClient.isAlive();
   console.log(`[Main] Fiber node at ${CONFIG.fiberRpcUrl}: ${alive ? '✅ connected' : '❌ unreachable'}`);
 
-  // Start game server
+  // Start game server (HMI WebSocket bridge)
   gameServer = new GameServer({
     port: CONFIG.gameServerPort,
-    fiberRpcUrl: CONFIG.fiberRpcUrl,
     debug: CONFIG.devMode,
   });
-  gameServer.start();
+  await gameServer.start();
+
+  // Tournament manager → wire events to HMI
+  tournamentManager = new TournamentManager({ fiberRpc: CONFIG.fiberRpcUrl });
+  _wireTournamentToHMI(tournamentManager);
 
   // Setup IPC
   setupIPC();
@@ -121,6 +126,65 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (gameServer) gameServer.stop();
 });
+
+// ── Tournament → HMI bridge ────────────────────────────────────────────────
+
+function _wireTournamentToHMI(tm) {
+  // Push tournament list to any connected display on manager create
+  tm.on('tournament_created', (t) => {
+    const items = tm.list().map(x => ({
+      id: x.id, game: x.gameId, entryFee: x.entryFee, players: x.playerCount,
+    }));
+    gameServer.sendTournamentList(items);
+    gameServer.sendStatus(`Tournament ready: ${t.gameId}`);
+  });
+
+  // Game start → all displays show Live screen
+  tm.on('started', ({ gameId, players }) => {
+    const names = players || ['Player 1', 'Player 2'];
+    gameServer.sendGameStart({
+      game: gameId || 'FiberQuest',
+      player1: names[0] || 'Player 1',
+      player2: names[1] || 'Player 2',
+    });
+    gameServer.sendStatus('LIVE');
+  });
+
+  // Live score updates
+  tm.on('scores', ({ scores }) => {
+    if (!Array.isArray(scores)) return;
+    scores.forEach((entry, idx) => {
+      const val = typeof entry === 'object' ? (entry.score ?? entry.value ?? 0) : entry;
+      gameServer.sendScore(idx, val);
+    });
+  });
+
+  // Winner / payout → trigger winner screen on all displays
+  tm.on('winner', ({ winner, totalPot }) => {
+    const shannons = totalPot ? Math.round(totalPot * 1e8) : 0;
+    gameServer.sendWinner({ name: winner?.name || 'Winner', payoutShannons: shannons });
+  });
+
+  // Fiber invoice → send status with QR hint
+  tm.on('invoice', ({ name, invoice }) => {
+    gameServer.sendStatus(`${name}: scan QR to enter`);
+    // ESP32 WS client can render QR if it receives invoice event
+    // Broadcast raw invoice for displays that support it
+    if (gameServer.clientCount > 0) {
+      // Extra event for capable displays
+      gameServer._broadcast({ event: 'invoice', player: name, bolt11: invoice });
+    }
+  });
+
+  tm.on('player_paid', ({ name }) => {
+    gameServer.sendStatus(`${name} paid — waiting...`);
+  });
+
+  tm.on('error', (err) => {
+    console.error('[HMI bridge] Tournament error:', err.message);
+    gameServer.sendStatus('Error — check console');
+  });
+}
 
 app.on('activate', () => {
   if (!mainWindow) createWindow();
