@@ -2,3 +2,5 @@ node_modules/
 dist/
 .env
 *.AppImage
+package-lock.json
+ckb-lc-test-results/

@@ -9,6 +9,9 @@ FiberQuest is a hackathon entry for "Claw & Order: CKB AI Agent Hackathon" (dead
 
 **Mission:** Autonomous tournament agent — players enter retro gaming tournaments via Fiber Network micropayments. A Node.js agent watches RetroArch RAM in real time, scores each player, and autonomously executes payouts when the tournament ends. No human clicks payments; the agent does it.
 
+**Phase 1 (Hackathon, due March 25):** Single-player tournaments + organizer-hosted matches
+**Phase 2 (Post-hackathon):** Peer-to-peer multiplayer wagering (player-initiated, direct 1v1+ payouts)
+
 **Judging priority:** Autonomy > Novelty > Completeness > Soundness > UX > Viability
 
 ## Concept

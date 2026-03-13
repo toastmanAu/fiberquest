@@ -13,8 +13,17 @@
     "build:x64": "electron-builder --linux --x64"
   },
   "dependencies": {
-    "ws": "^8.18.0",
-    "axios": "^1.6.0"
+    "@ckb-ccc/ccc": "^1.1.25",
+    "@ckb-ccc/connector-react": "^1.0.34",
+    "@ckb-ccc/core": "^1.12.5",
+    "@ckb-ccc/spore": "^1.5.17",
+    "@ckb-ccc/ssri": "^0.2.22",
+    "@nervosnetwork/ckb-sdk-utils": "^0.109.5",
+    "@nervosnetwork/ckb-types": "^0.109.5",
+    "axios": "^1.6.0",
+    "bignumber.js": "^10.0.2",
+    "blake2b": "^2.1.4",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -24,7 +33,9 @@
     "appId": "com.wyltek.fiberquest",
     "productName": "FiberQuest",
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Game"
     },
     "extraMetadata": {
