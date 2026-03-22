@@ -52,6 +52,7 @@
       "repo": "fiberquest"
     },
     "deb": {
+      "maintainer": "Wyltek <toastmanAu@users.noreply.github.com>",
       "depends": [],
       "afterInstall": "build/scripts/after-install.sh",
       "afterRemove":  "build/scripts/after-remove.sh"
