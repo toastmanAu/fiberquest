@@ -2,6 +2,10 @@
   "name": "fiberquest",
   "version": "0.0.1-alpha",
   "description": "Retro gaming tournament platform powered by Fiber Network micropayments",
+  "author": {
+    "name": "Wyltek",
+    "email": "toastmanAu@users.noreply.github.com"
+  },
   "main": "src/main.js",
   "scripts": {
     "start":         "electron .",
