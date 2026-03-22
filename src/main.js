@@ -93,6 +93,76 @@ function setupIPC() {
   ipcMain.handle('config:get', () => CONFIG);
 }
 
+// ── Tournament IPC handlers ────────────────────────────────────────────────
+
+function setupTournamentIPC() {
+  const fs = require('fs');
+
+  ipcMain.handle('tournament:create', (_, opts) => {
+    const t = tournamentManager.create(opts);
+    tournamentManager.startPaymentPolling(3000);
+    return t.status();
+  });
+
+  ipcMain.handle('tournament:addPlayer', async (_, tId, playerId, name) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.addPlayer(playerId, name, {});
+  });
+
+  ipcMain.handle('tournament:markPaid', (_, tId, playerId) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    t.markPaid(playerId);
+  });
+
+  ipcMain.handle('tournament:status', (_, tId) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.status();
+  });
+
+  ipcMain.handle('tournament:end', (_, tId) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.end('manual');
+  });
+
+  ipcMain.handle('tournament:sendPayout', (_, tId, invoice) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.sendPayout(invoice);
+  });
+
+  ipcMain.handle('games:list', () => {
+    const gamesDir = path.join(__dirname, '../games');
+    try {
+      return fs.readdirSync(gamesDir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => JSON.parse(fs.readFileSync(path.join(gamesDir, f), 'utf8')));
+    } catch (e) {
+      console.error('[Games] Failed to load:', e);
+      return [];
+    }
+  });
+}
+
+// ── Tournament → Renderer bridge (push events) ──────────────────────────────
+
+function _wireTournamentToRenderer(tm) {
+  const push = (event, data) => {
+    if (mainWindow) mainWindow.webContents.send('tournament:event', { event, ...data });
+  };
+
+  tm.on('invoice',      data => { console.log('[TM→UI] invoice', data); push('invoice', data); });
+  tm.on('player_paid',  data => { console.log('[TM→UI] player_paid', data); push('player_paid', data); });
+  tm.on('started',      data => { console.log('[TM→UI] started', data); push('started', data); });
+  tm.on('scores',       data => { console.log('[TM→UI] scores', data); push('scores', data); });
+  tm.on('winner',       data => { console.log('[TM→UI] winner', data); push('winner', data); });
+  tm.on('complete',     data => { console.log('[TM→UI] complete', data); push('complete', data); });
+  tm.on('error',        err => { console.error('[TM→UI] error', err); push('error', { message: err.message }); });
+}
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -114,9 +184,13 @@ app.whenReady().then(async () => {
 
   // Setup IPC
   setupIPC();
+  setupTournamentIPC();
 
   // Create window
   createWindow();
+
+  // Wire tournament events to Electron window (after createWindow)
+  _wireTournamentToRenderer(tournamentManager);
 });
 
 app.on('window-all-closed', () => {

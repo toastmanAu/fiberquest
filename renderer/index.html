@@ -3,448 +3,875 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' fonts.googleapis.com fonts.gstatic.com; connect-src ws://localhost:*">
-<title>FiberQuest</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+<title>FiberQuest Tournament Manager</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0d0d0d; --surface: #111;
+    --bg: #0d0d0d; --surface: #111; --dark: #050505;
     --green: #39ff14; --cyan: #00e5ff; --red: #ff2052;
     --yellow: #ffe600; --purple: #c77dff;
     --text: #e0e0e0; --muted: #555;
     --border: #222;
   }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Press Start 2P', monospace; font-size: 10px; line-height: 1.6; min-height: 100vh; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    overflow: hidden;
+  }
 
-  /* ── Header ── */
+  /* Header */
   header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: .75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem;
     border-bottom: 2px solid var(--green);
-    background: #050505;
+    background: var(--dark);
+    height: 50px;
   }
-  .logo { color: var(--green); font-size: 14px; letter-spacing: 2px; text-shadow: 0 0 12px var(--green); }
+
+  .logo {
+    color: var(--green);
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-shadow: 0 0 12px var(--green);
+  }
+
   .logo span { color: var(--cyan); }
-  .node-status { display: flex; align-items: center; gap: .5rem; font-size: 8px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-  .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
 
-  /* ── Layout ── */
-  .app { display: grid; grid-template-columns: 260px 1fr; height: calc(100vh - 46px); }
-
-  /* ── Sidebar ── */
-  .sidebar {
-    background: #080808; border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; overflow-y: auto;
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 8px;
   }
-  .sidebar-section { padding: 1rem; border-bottom: 1px solid var(--border); }
-  .sidebar-title { color: var(--muted); font-size: 7px; letter-spacing: 2px; margin-bottom: .75rem; text-transform: uppercase; }
 
-  /* Channel card */
-  .channel-card { background: #111; border: 1px solid var(--border); border-radius: 4px; padding: .6rem; margin-bottom: .5rem; }
-  .channel-card .peer { color: var(--cyan); font-size: 8px; margin-bottom: .3rem; }
-  .channel-balances { display: flex; justify-content: space-between; font-size: 7px; }
-  .channel-balances .local { color: var(--green); }
-  .channel-balances .remote { color: var(--muted); }
-  .channel-state { font-size: 6px; color: var(--yellow); margin-top: .2rem; }
-
-  /* Payment ticker */
-  .payment-item { display: flex; justify-content: space-between; align-items: center; padding: .3rem 0; border-bottom: 1px solid #1a1a1a; font-size: 7px; }
-  .payment-item .amount { color: var(--green); }
-  .payment-item .type { color: var(--muted); }
-  .payment-flash { animation: flash 0.5s ease; }
-  @keyframes flash { 0%,100% { opacity:1; } 50% { opacity:0; background: rgba(57,255,20,.2); } }
-
-  /* ── Main content ── */
-  .main { display: flex; flex-direction: column; overflow: hidden; }
-
-  /* Tabs */
-  .tabs { display: flex; border-bottom: 1px solid var(--border); background: #090909; }
-  .tab { padding: .75rem 1.25rem; font-size: 8px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; transition: all .15s; }
-  .tab.active { color: var(--green); border-bottom-color: var(--green); }
-  .tab:hover { color: var(--text); }
-
-  /* Panel */
-  .panel { display: none; flex: 1; overflow-y: auto; padding: 1.5rem; }
-  .panel.active { display: block; }
-
-  /* ── Lobby panel ── */
-  .lobby-header { text-align: center; padding: 2rem 0 1.5rem; }
-  .lobby-header h2 { color: var(--green); font-size: 16px; text-shadow: 0 0 20px var(--green); margin-bottom: .5rem; }
-  .lobby-header p { color: var(--muted); font-size: 8px; }
-
-  .connect-form { max-width: 400px; margin: 1.5rem auto; }
-  .field { margin-bottom: 1rem; }
-  .field label { display: block; color: var(--muted); font-size: 7px; margin-bottom: .4rem; }
-  .field input { width: 100%; background: #111; border: 1px solid var(--border); border-radius: 2px; color: var(--text); font-family: inherit; font-size: 9px; padding: .5rem; outline: none; }
-  .field input:focus { border-color: var(--green); }
-
-  .btn { background: transparent; border: 2px solid var(--green); color: var(--green); font-family: inherit; font-size: 9px; padding: .6rem 1.25rem; cursor: pointer; transition: all .15s; text-transform: uppercase; }
-  .btn:hover { background: var(--green); color: var(--bg); }
-  .btn.danger { border-color: var(--red); color: var(--red); }
-  .btn.danger:hover { background: var(--red); color: var(--bg); }
-
-  /* ── Game table ── */
-  .table-area {
-    position: relative; background: #0a1a0a;
-    border: 2px solid var(--green); border-radius: 50%;
-    width: 500px; height: 280px; margin: 1.5rem auto;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 0 30px rgba(57,255,20,.15);
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
   }
-  .pot { text-align: center; }
-  .pot-label { font-size: 7px; color: var(--muted); }
-  .pot-value { font-size: 20px; color: var(--yellow); text-shadow: 0 0 10px var(--yellow); }
 
-  .player-seat {
-    position: absolute; background: #111; border: 1px solid var(--border);
-    border-radius: 4px; padding: .5rem .75rem; font-size: 7px; min-width: 80px; text-align: center;
+  .dot.online {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
   }
-  .player-seat.active-turn { border-color: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
-  .player-seat .pname { color: var(--cyan); margin-bottom: .2rem; }
-  .player-seat .pchips { color: var(--green); }
-  .player-seat .pcards { color: var(--muted); font-size: 8px; margin-top: .2rem; }
-  /* Seat positions */
-  .seat-0 { bottom: -2rem; left: 50%; transform: translateX(-50%); }  /* you */
-  .seat-1 { top: -2rem; left: 50%; transform: translateX(-50%); }     /* opponent */
-  .seat-2 { left: -5rem; top: 50%; transform: translateY(-50%); }
-  .seat-3 { right: -5rem; top: 50%; transform: translateY(-50%); }
 
-  .community-cards { display: flex; gap: .5rem; }
-  .card { background: #fff; color: #000; border-radius: 3px; padding: .2rem .4rem; font-size: 11px; font-family: monospace; font-weight: bold; min-width: 28px; text-align: center; }
-  .card.red { color: #c00; }
-  .card.hidden { background: #333; color: #333; }
+  /* Main container */
+  .app {
+    height: calc(100vh - 50px);
+    position: relative;
+    overflow: hidden;
+  }
 
-  /* Action bar */
-  .action-bar { display: flex; gap: .75rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+  /* Views */
+  .view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    overflow-y: auto;
+    padding: 2rem;
+  }
 
-  /* ── Payment panel ── */
-  .payment-log { max-width: 600px; }
-  .payment-row { display: flex; justify-content: space-between; align-items: center; padding: .5rem; border-bottom: 1px solid var(--border); font-size: 8px; }
-  .payment-row .pamount { color: var(--green); font-size: 11px; }
-  .payment-row .ptype { color: var(--yellow); }
-  .payment-row .pts { color: var(--muted); font-size: 7px; }
+  .view.active {
+    opacity: 1;
+    pointer-events: all;
+  }
 
-  /* Invoice QR modal */
-  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 100; align-items: center; justify-content: center; }
-  .modal.open { display: flex; }
-  .modal-box { background: #111; border: 2px solid var(--green); border-radius: 4px; padding: 2rem; max-width: 400px; width: 90%; text-align: center; }
-  .modal-box h3 { color: var(--green); margin-bottom: 1rem; font-size: 10px; }
-  .invoice-string { background: #000; border: 1px solid var(--border); border-radius: 2px; padding: .75rem; font-size: 7px; color: var(--cyan); word-break: break-all; margin: 1rem 0; font-family: monospace; }
-  .modal-box p { color: var(--muted); font-size: 7px; margin-bottom: 1rem; }
+  /* ── View 1: Setup ── */
+  .setup-form {
+    width: 100%;
+    max-width: 400px;
+  }
 
-  /* Stats bar */
-  .stats-bar { display: flex; gap: 2rem; padding: .75rem 1.5rem; border-top: 1px solid var(--border); background: #090909; font-size: 8px; }
-  .stat { display: flex; flex-direction: column; gap: .2rem; }
-  .stat-label { color: var(--muted); font-size: 6px; }
-  .stat-value { color: var(--cyan); }
+  .form-title {
+    text-align: center;
+    color: var(--green);
+    font-size: 16px;
+    text-shadow: 0 0 20px var(--green);
+    margin-bottom: 2rem;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-label {
+    display: block;
+    color: var(--muted);
+    font-size: 7px;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .form-control {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    padding: 0.6rem 0.8rem;
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .form-control:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .btn {
+    background: transparent;
+    border: 2px solid var(--green);
+    color: var(--green);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    padding: 0.6rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .btn:hover {
+    background: var(--green);
+    color: var(--bg);
+  }
+
+  .btn.danger {
+    border-color: var(--red);
+    color: var(--red);
+  }
+
+  .btn.danger:hover {
+    background: var(--red);
+    color: var(--bg);
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ── View 2: Waiting Room ── */
+  .waiting-header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .waiting-title {
+    color: var(--green);
+    font-size: 16px;
+    text-shadow: 0 0 20px var(--green);
+    margin-bottom: 0.5rem;
+  }
+
+  .tournament-id {
+    color: var(--cyan);
+    font-size: 8px;
+    margin-bottom: 0.5rem;
+  }
+
+  .status-text {
+    color: var(--yellow);
+    font-size: 8px;
+  }
+
+  .player-slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 600px;
+    margin: 2rem 0;
+  }
+
+  .player-slot {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .player-slot.active {
+    border-color: var(--green);
+    box-shadow: 0 0 12px rgba(57, 255, 20, 0.3);
+  }
+
+  .slot-input {
+    width: 100%;
+    background: var(--dark);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    padding: 0.5rem;
+    margin-bottom: 0.75rem;
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .slot-input:focus {
+    border-color: var(--cyan);
+  }
+
+  .slot-button {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    font-family: 'Press Start 2P', monospace;
+    font-size: 7px;
+    padding: 0.4rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .slot-button:hover {
+    background: var(--cyan);
+    color: var(--bg);
+  }
+
+  .slot-status {
+    font-size: 8px;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+  }
+
+  .slot-status.paid {
+    color: var(--green);
+  }
+
+  .invoice-box {
+    background: var(--dark);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    max-height: 80px;
+    overflow: hidden;
+  }
+
+  .invoice-text {
+    font-size: 5px;
+    color: var(--cyan);
+    font-family: monospace;
+    word-break: break-all;
+    white-space: pre-wrap;
+    margin-bottom: 0.3rem;
+  }
+
+  .invoice-copy {
+    width: 100%;
+    font-size: 6px;
+    padding: 0.2rem;
+    background: transparent;
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    cursor: pointer;
+  }
+
+  /* ── View 3: Live ── */
+  .live-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: var(--green);
+    font-size: 14px;
+    text-shadow: 0 0 20px var(--green);
+  }
+
+  .live-subheader {
+    color: var(--muted);
+    font-size: 8px;
+    margin-top: 0.5rem;
+  }
+
+  .vs-container {
+    display: flex;
+    align-items: center;
+    gap: 3rem;
+    margin: 2rem 0;
+    width: 100%;
+    max-width: 600px;
+  }
+
+  .player-live {
+    flex: 1;
+    text-align: center;
+  }
+
+  .player-name-live {
+    color: var(--cyan);
+    font-size: 11px;
+    margin-bottom: 0.75rem;
+  }
+
+  .health-bar {
+    background: var(--dark);
+    border: 1px solid var(--border);
+    height: 20px;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+  }
+
+  .health-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--yellow));
+    transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bg);
+    font-size: 7px;
+    font-weight: bold;
+  }
+
+  .vs-divider {
+    color: var(--green);
+    font-size: 20px;
+    font-weight: bold;
+  }
+
+  .timer {
+    position: absolute;
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--yellow);
+    font-size: 12px;
+    text-shadow: 0 0 12px var(--yellow);
+  }
+
+  .timer-label {
+    font-size: 8px;
+    color: var(--muted);
+  }
+
+  .live-controls {
+    margin-top: 2rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+  }
+
+  /* ── View 4: Results ── */
+  .results-header {
+    color: var(--green);
+    font-size: 18px;
+    text-shadow: 0 0 30px var(--green);
+    margin-bottom: 1rem;
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .winner-name {
+    color: var(--yellow);
+    font-size: 14px;
+    text-shadow: 0 0 20px var(--yellow);
+    margin-bottom: 2rem;
+  }
+
+  .scoreboard {
+    background: var(--surface);
+    border: 2px solid var(--green);
+    border-radius: 4px;
+    padding: 1.5rem;
+    max-width: 500px;
+    margin: 1rem 0;
+    width: 100%;
+  }
+
+  .score-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 80px 100px;
+    gap: 1rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    font-size: 8px;
+  }
+
+  .score-row:last-child {
+    border-bottom: none;
+  }
+
+  .score-rank {
+    color: var(--yellow);
+    font-weight: bold;
+  }
+
+  .score-name {
+    color: var(--cyan);
+    word-break: break-all;
+  }
+
+  .score-value {
+    text-align: right;
+    color: var(--green);
+  }
+
+  .score-payout {
+    text-align: right;
+    color: var(--purple);
+  }
+
+  .results-actions {
+    margin-top: 2rem;
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+  }
+
+  /* Loading spinner */
+  .spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">FIBER<span>QUEST</span></div>
-  <div class="node-status">
+  <div class="status">
     <div class="dot" id="fiberDot"></div>
     <span id="fiberStatus">Connecting...</span>
   </div>
 </header>
 
 <div class="app">
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-section">
-      <div class="sidebar-title">Channels</div>
-      <div id="channelList"><div style="color:var(--muted);font-size:7px">Loading...</div></div>
-    </div>
-    <div class="sidebar-section" style="flex:1">
-      <div class="sidebar-title">Live Payments</div>
-      <div id="paymentTicker"></div>
-    </div>
-  </aside>
 
-  <!-- Main -->
-  <div class="main">
-    <div class="tabs">
-      <div class="tab active" data-tab="lobby">🎮 Lobby</div>
-      <div class="tab" data-tab="game">♠ Table</div>
-      <div class="tab" data-tab="payments">⚡ Payments</div>
-    </div>
+  <!-- View 1: Setup Tournament -->
+  <div class="view active" id="view-setup">
+    <div class="setup-form">
+      <div class="form-title">🎮 SETUP TOURNAMENT</div>
 
-    <!-- Lobby -->
-    <div class="panel active" id="panel-lobby">
-      <div class="lobby-header">
-        <h2>FIBERQUEST</h2>
-        <p>Texas Hold'em · Powered by Fiber Network micropayments</p>
+      <div class="form-group">
+        <label class="form-label">Game</label>
+        <select class="form-control" id="gameSelect" onchange="updateModes()">
+          <option>Loading games...</option>
+        </select>
       </div>
-      <div class="connect-form">
-        <div class="field">
-          <label>Your Name</label>
-          <input type="text" id="playerName" placeholder="SatoshiDealer" maxlength="16">
+
+      <div class="form-group">
+        <label class="form-label">Tournament Mode</label>
+        <select class="form-control" id="modeSelect">
+          <option>Select game first</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Entry Fee (CKB)</label>
+          <input type="number" class="form-control" id="entryFee" value="10" min="1" max="1000">
         </div>
-        <div class="field">
-          <label>Game Server</label>
-          <input type="text" id="serverUrl" value="ws://localhost:8765" placeholder="ws://localhost:8765">
+        <div class="form-group">
+          <label class="form-label">Players</label>
+          <select class="form-control" id="playerCount">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
         </div>
-        <div class="field">
-          <label>Your Fiber Node ID (optional)</label>
-          <input type="text" id="fiberNodeId" placeholder="03abc...">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Time Limit (min)</label>
+          <input type="number" class="form-control" id="timeLimit" value="10" min="1" max="60">
         </div>
-        <button class="btn" onclick="connectToGame()">JOIN TABLE →</button>
-      </div>
-    </div>
-
-    <!-- Game table -->
-    <div class="panel" id="panel-game">
-      <div class="table-area">
-        <div class="pot">
-          <div class="pot-label">POT</div>
-          <div class="pot-value" id="potValue">0</div>
-          <div class="community-cards" id="communityCards" style="margin-top:.5rem;justify-content:center"></div>
+        <div class="form-group">
+          <label class="form-label">Currency</label>
+          <select class="form-control" id="currency">
+            <option value="Fibt">Fibt (testnet)</option>
+            <option value="Fibb">Fibb (mainnet)</option>
+          </select>
         </div>
-        <div id="playerSeats"></div>
       </div>
-      <div class="action-bar" id="actionBar" style="display:none">
-        <button class="btn danger" onclick="sendAction('FOLD')">FOLD</button>
-        <button class="btn" onclick="sendAction('CHECK')">CHECK</button>
-        <button class="btn" onclick="sendAction('CALL')">CALL</button>
-        <button class="btn" onclick="sendAction('RAISE', 20)">RAISE</button>
-      </div>
-    </div>
 
-    <!-- Payments log -->
-    <div class="panel" id="panel-payments">
-      <div class="payment-log" id="paymentLog">
-        <div style="color:var(--muted);font-size:8px;padding:1rem">No payments yet this session.</div>
-      </div>
-    </div>
-
-    <!-- Stats bar -->
-    <div class="stats-bar">
-      <div class="stat"><span class="stat-label">NODE</span><span class="stat-value" id="statNode">—</span></div>
-      <div class="stat"><span class="stat-label">CHANNELS</span><span class="stat-value" id="statChannels">—</span></div>
-      <div class="stat"><span class="stat-label">SESSION PAID</span><span class="stat-value" id="statPaid">0 CKB</span></div>
-      <div class="stat"><span class="stat-label">PHASE</span><span class="stat-value" id="statPhase">—</span></div>
+      <button class="btn" onclick="startSetup()" style="width:100%;margin-top:2rem">
+        CREATE TOURNAMENT →
+      </button>
     </div>
   </div>
-</div>
 
-<!-- Invoice payment modal -->
-<div class="modal" id="payModal">
-  <div class="modal-box">
-    <h3 id="modalTitle">PAYMENT REQUIRED</h3>
-    <p id="modalDesc">Scan or pay this Fiber invoice:</p>
-    <div class="invoice-string" id="modalInvoice"></div>
-    <p id="modalAmount" style="color:var(--yellow);font-size:10px"></p>
-    <div style="display:flex;gap:.75rem;justify-content:center">
-      <button class="btn" onclick="confirmPayment()">✓ PAID</button>
-      <button class="btn danger" onclick="closeModal()">CANCEL</button>
+  <!-- View 2: Waiting Room -->
+  <div class="view" id="view-waiting">
+    <div class="waiting-header">
+      <div class="waiting-title">⏳ WAITING ROOM</div>
+      <div class="tournament-id" id="tourId"></div>
+      <div class="status-text" id="waitStatus"></div>
+    </div>
+    <div class="player-slots" id="playerSlots"></div>
+    <button class="btn danger" onclick="goBack()">← BACK</button>
+  </div>
+
+  <!-- View 3: Live Tournament -->
+  <div class="view" id="view-live">
+    <div class="live-header">
+      <div id="gameNameLive">Game</div>
+      <div class="live-subheader" id="modeLive"></div>
+    </div>
+    <div class="timer">
+      <div class="timer-label">ELAPSED</div>
+      <div id="timerValue">0:00</div>
+    </div>
+    <div class="vs-container">
+      <div class="player-live">
+        <div class="player-name-live" id="p1NameLive">Player 1</div>
+        <div class="health-bar">
+          <div class="health-fill" id="p1Health" style="width:100%">100%</div>
+        </div>
+      </div>
+      <div class="vs-divider">VS</div>
+      <div class="player-live">
+        <div class="player-name-live" id="p2NameLive">Player 2</div>
+        <div class="health-bar">
+          <div class="health-fill" id="p2Health" style="width:100%">100%</div>
+        </div>
+      </div>
+    </div>
+    <div class="live-controls">
+      <button class="btn danger" onclick="endTournament()">END TOURNAMENT</button>
     </div>
   </div>
+
+  <!-- View 4: Results -->
+  <div class="view" id="view-results">
+    <div class="results-header">🏆 WINNER!</div>
+    <div class="winner-name" id="winnerName">—</div>
+    <div class="scoreboard" id="scoreboardContent"></div>
+    <div class="results-actions">
+      <button class="btn" onclick="goToSetup()">NEW TOURNAMENT →</button>
+    </div>
+  </div>
+
 </div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
-let ws = null;
-let myPlayerId = null;
-let gameState = null;
-let sessionPaid = 0;
-let pendingPayment = null;
+// ─────────────────────────────────────────────────────────────────────────
 
-// ── Tabs ──────────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
-  });
-});
+// State
+let currentTournament = null;
+let gamesList = [];
+let timerInterval = null;
 
-// ── Fiber node status ─────────────────────────────────────────────────────
-async function initFiber() {
+// ─────────────────────────────────────────────────────────────────────────
+
+// Initialize
+async function init() {
+  // Load games
+  try {
+    gamesList = await window.fiberquest.games.list();
+    populateGameSelect();
+  } catch (e) {
+    console.error('Failed to load games:', e);
+  }
+
+  // Check Fiber node
   try {
     const info = await window.fiberquest.fiber.nodeInfo();
     document.getElementById('fiberDot').classList.add('online');
-    document.getElementById('fiberStatus').textContent = 'Fiber connected';
-    const nodeId = (info.node_id || '').slice(0, 12) + '…';
-    document.getElementById('statNode').textContent = nodeId;
-
-    const chans = await window.fiberquest.fiber.listChannels();
-    const list = chans.channels || chans || [];
-    document.getElementById('statChannels').textContent = list.length;
-    renderChannels(list);
-
-    setInterval(pollFiber, 15000);
-  } catch(e) {
+    document.getElementById('fiberStatus').textContent = 'Fiber ready';
+  } catch (e) {
     document.getElementById('fiberStatus').textContent = 'No Fiber node';
-    document.getElementById('statNode').textContent = 'offline';
+  }
+
+  // Listen for tournament events
+  window.fiberquest.tournament.onEvent(handleTournamentEvent);
+}
+
+function populateGameSelect() {
+  const select = document.getElementById('gameSelect');
+  select.innerHTML = gamesList.map(g =>
+    `<option value="${g.id}">${g.name} (${g.system})</option>`
+  ).join('');
+  updateModes();
+}
+
+function updateModes() {
+  const gameId = document.getElementById('gameSelect').value;
+  const game = gamesList.find(g => g.id === gameId);
+  const modes = game?.tournament_modes || [];
+  const select = document.getElementById('modeSelect');
+  select.innerHTML = modes.map(m =>
+    `<option value="${m.id}">${m.name}</option>`
+  ).join('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
+// View transitions
+function showView(viewId) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(viewId).classList.add('active');
+}
+
+function goBack() {
+  showView('view-setup');
+}
+
+function goToSetup() {
+  currentTournament = null;
+  showView('view-setup');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
+// View 1: Setup
+async function startSetup() {
+  const gameId = document.getElementById('gameSelect').value;
+  const mode = document.getElementById('modeSelect').value;
+  const entryFee = parseInt(document.getElementById('entryFee').value) || 10;
+  const players = parseInt(document.getElementById('playerCount').value) || 2;
+  const timeLimit = parseInt(document.getElementById('timeLimit').value) || 10;
+  const currency = document.getElementById('currency').value;
+
+  try {
+    const status = await window.fiberquest.tournament.create({
+      gameId,
+      mode,
+      entryFee,
+      players,
+      timeLimitMinutes: timeLimit,
+      currency,
+    });
+
+    currentTournament = status;
+    showWaitingRoom();
+  } catch (e) {
+    alert('Error creating tournament: ' + e.message);
   }
 }
 
-async function pollFiber() {
-  try {
-    const chans = await window.fiberquest.fiber.listChannels();
-    const list = chans.channels || chans || [];
-    document.getElementById('statChannels').textContent = list.length;
-    renderChannels(list);
-  } catch {}
+// ─────────────────────────────────────────────────────────────────────────
+
+// View 2: Waiting Room
+function showWaitingRoom() {
+  const t = currentTournament;
+  document.getElementById('tourId').textContent = `ID: ${t.id}`;
+  document.getElementById('waitStatus').textContent = `Waiting for ${t.players} players...`;
+
+  const slotsEl = document.getElementById('playerSlots');
+  slotsEl.innerHTML = Array(t.players).fill(null).map((_, i) =>
+    `<div class="player-slot" id="slot-${i}">
+      <input type="text" class="slot-input" id="name-${i}" placeholder="Player ${i+1}">
+      <button class="slot-button" onclick="addPlayer(${i})">ADD PLAYER</button>
+      <div class="slot-status" id="status-${i}">Waiting...</div>
+      <div class="invoice-box" id="invoice-${i}" style="display:none">
+        <div class="invoice-text" id="invoiceText-${i}"></div>
+        <button class="invoice-copy" onclick="copyInvoice(${i})">COPY</button>
+      </div>
+    </div>`
+  ).join('');
+
+  showView('view-waiting');
 }
 
-function renderChannels(channels) {
-  const el = document.getElementById('channelList');
-  if (!channels.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:7px">No open channels</div>';
+async function addPlayer(slotIndex) {
+  const name = document.getElementById(`name-${slotIndex}`).value.trim();
+  if (!name) {
+    alert('Please enter a name');
     return;
   }
-  el.innerHTML = channels.map(c => {
-    const local  = (Number(BigInt(c.local_balance  || '0x0')) / 1e8).toFixed(2);
-    const remote = (Number(BigInt(c.remote_balance || '0x0')) / 1e8).toFixed(2);
-    const peer   = (c.peer_id || c.channel_id || '').slice(0, 16) + '…';
-    return `<div class="channel-card">
-      <div class="peer">${peer}</div>
-      <div class="channel-balances">
-        <span class="local">↑ ${local} CKB</span>
-        <span class="remote">↓ ${remote} CKB</span>
+
+  try {
+    const playerId = `player-${slotIndex}`;
+    const result = await window.fiberquest.tournament.addPlayer(currentTournament.id, playerId, name);
+
+    // Show invoice
+    document.getElementById(`status-${slotIndex}`).textContent = 'Invoice ready';
+    document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
+    document.getElementById(`invoiceText-${slotIndex}`).textContent = result.entryInvoice || '(invoice)';
+    document.getElementById(`slot-${slotIndex}`).classList.add('active');
+
+    // Disable input
+    document.getElementById(`name-${slotIndex}`).disabled = true;
+    document.querySelector(`#slot-${slotIndex} .slot-button`).disabled = true;
+  } catch (e) {
+    alert('Error adding player: ' + e.message);
+  }
+}
+
+function copyInvoice(slotIndex) {
+  const text = document.getElementById(`invoiceText-${slotIndex}`).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('Invoice copied!');
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
+// View 3: Live
+async function showLive() {
+  const t = currentTournament;
+  const game = gamesList.find(g => g.id === t.game);
+  const mode = game?.tournament_modes?.find(m => m.id === t.mode);
+
+  document.getElementById('gameNameLive').textContent = game?.name || 'Game';
+  document.getElementById('modeLive').textContent = mode?.name || 'Tournament';
+
+  // Initialize health bars from player list
+  if (t.players && t.players[0]) {
+    document.getElementById('p1NameLive').textContent = t.players[0].name;
+  }
+  if (t.players && t.players[1]) {
+    document.getElementById('p2NameLive').textContent = t.players[1].name;
+  }
+
+  // Start timer
+  let elapsed = 0;
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    elapsed++;
+    const min = Math.floor(elapsed / 60);
+    const sec = (elapsed % 60).toString().padStart(2, '0');
+    document.getElementById('timerValue').textContent = `${min}:${sec}`;
+  }, 1000);
+
+  showView('view-live');
+}
+
+async function endTournament() {
+  if (!confirm('End this tournament?')) return;
+  try {
+    await window.fiberquest.tournament.end(currentTournament.id);
+    if (timerInterval) clearInterval(timerInterval);
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+
+// View 4: Results
+function showResults(event) {
+  const { winner, board } = event;
+
+  document.getElementById('winnerName').textContent = (winner?.name || 'Unknown') + '!';
+
+  // Scoreboard
+  const rows = (board || []).map((entry, idx) => {
+    const rank = idx + 1;
+    const name = entry.name || `Player ${idx + 1}`;
+    const score = entry.score || 0;
+    const payout = entry.payout ? entry.payout.toFixed(2) : '0.00';
+    return `
+      <div class="score-row">
+        <div class="score-rank">#${rank}</div>
+        <div class="score-name">${name}</div>
+        <div class="score-value">${score}</div>
+        <div class="score-payout">${payout} CKB</div>
       </div>
-      <div class="channel-state">${c.state?.state_name || c.status || 'OPEN'}</div>
-    </div>`;
+    `;
   }).join('');
+
+  document.getElementById('scoreboardContent').innerHTML = rows || '<div style="color:var(--muted)">No scores</div>';
+  showView('view-results');
 }
 
-// ── Game connection ────────────────────────────────────────────────────────
-function connectToGame() {
-  const name   = document.getElementById('playerName').value.trim() || 'Player';
-  const url    = document.getElementById('serverUrl').value.trim();
-  const nodeId = document.getElementById('fiberNodeId').value.trim();
+// ─────────────────────────────────────────────────────────────────────────
 
-  ws = new WebSocket(url);
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'FGSP_CONNECT', name, fiberNodeId: nodeId || null }));
-  };
-  ws.onmessage = (e) => handleServerMsg(JSON.parse(e.data));
-  ws.onerror   = (e) => console.error('WS error', e);
-  ws.onclose   = ()  => { document.getElementById('statPhase').textContent = 'DISCONNECTED'; };
-}
+// Tournament events
+function handleTournamentEvent(event) {
+  console.log('[UI] Tournament event:', event.event, event);
 
-function handleServerMsg(msg) {
-  switch (msg.type) {
-    case 'FGSP_WELCOME':
-      myPlayerId = msg.playerId;
-      showTab('game');
+  switch (event.event) {
+    case 'started':
+      console.log('Tournament started!');
+      showLive();
       break;
 
-    case 'FGSP_GAME_STATE_UPDATE':
-      gameState = msg;
-      renderGameState(msg);
-      document.getElementById('statPhase').textContent = msg.phase || '—';
+    case 'scores':
+      if (event.scores && event.scores.length >= 2) {
+        const s1 = event.scores[0];
+        const s2 = event.scores[1];
+
+        // Update health bars (simple: map score to health %)
+        const h1 = Math.min(100, (s1.score || 0));
+        const h2 = Math.min(100, (s2.score || 0));
+
+        document.getElementById('p1Health').style.width = h1 + '%';
+        document.getElementById('p1Health').textContent = h1 + '%';
+        document.getElementById('p2Health').style.width = h2 + '%';
+        document.getElementById('p2Health').textContent = h2 + '%';
+      }
       break;
 
-    case 'FGSP_PAYMENT_REQUEST':
-      showPaymentModal(msg);
+    case 'player_paid':
+      // Update the slot status
+      console.log('Player paid:', event.name);
+      updateWaitingStatus();
+      break;
+
+    case 'complete':
+      showResults(event);
+      break;
+
+    case 'error':
+      console.error('Tournament error:', event.message);
+      alert('Tournament error: ' + event.message);
       break;
   }
 }
 
-function renderGameState(state) {
-  // Pot
-  document.getElementById('potValue').textContent = (state.pot || 0) + ' CKB';
-
-  // Community cards
-  const cc = document.getElementById('communityCards');
-  const cards = state.communityCards || [];
-  cc.innerHTML = cards.length
-    ? cards.map(c => `<div class="card ${c.includes('♥')||c.includes('♦')?'red':''}">${c}</div>`).join('')
-    : '<div style="color:var(--muted);font-size:7px">—</div>';
-
-  // Player seats
-  const seatsEl = document.getElementById('playerSeats');
-  const players = Object.entries(state.players || {});
-  seatsEl.innerHTML = players.map(([id, p], i) => `
-    <div class="player-seat seat-${i} ${state.currentPlayer === id ? 'active-turn' : ''}">
-      <div class="pname">${p.name}${id === myPlayerId ? ' (you)' : ''}</div>
-      <div class="pchips">${p.chips} CKB</div>
-      <div class="pcards">${(p.cards||[]).join(' ')}</div>
-    </div>
-  `).join('');
-
-  // Action bar — show only on your turn
-  const actionBar = document.getElementById('actionBar');
-  actionBar.style.display = state.currentPlayer === myPlayerId ? 'flex' : 'none';
-
-  // Payment ticker (recent payments)
-  if (state.payments && state.payments.length) {
-    const ticker = document.getElementById('paymentTicker');
-    ticker.innerHTML = [...state.payments].reverse().slice(0, 10).map(p =>
-      `<div class="payment-item payment-flash">
-        <span class="type">${p.type}</span>
-        <span class="amount">+${p.amount_ckb} CKB</span>
-      </div>`
-    ).join('');
+function updateWaitingStatus() {
+  // Could fetch status and update UI, but for now just show a simple message
+  const statEl = document.getElementById('waitStatus');
+  if (statEl) {
+    statEl.textContent = 'Players joining...';
   }
-
-  // Stats
-  document.getElementById('statPaid').textContent = sessionPaid + ' CKB';
 }
 
-function sendAction(action, amount) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({ type: 'FGSP_PLAYER_ACTION', action, amount }));
-}
+// ─────────────────────────────────────────────────────────────────────────
 
-// ── Payment modal ──────────────────────────────────────────────────────────
-function showPaymentModal(req) {
-  pendingPayment = req;
-  document.getElementById('modalTitle').textContent =
-    req.type === 'BUY_IN' ? '💰 BUY-IN REQUIRED' : `⚡ ${req.type} PAYMENT`;
-  document.getElementById('modalDesc').textContent = req.description;
-  document.getElementById('modalInvoice').textContent = req.invoice;
-  document.getElementById('modalAmount').textContent = req.amount_ckb + ' CKB';
-  document.getElementById('payModal').classList.add('open');
-}
-
-async function confirmPayment() {
-  if (!pendingPayment || !ws) return;
-  // In full version: send payment via Fiber, get hash
-  // For now: optimistic confirmation
-  sessionPaid += pendingPayment.amount_ckb || 0;
-  ws.send(JSON.stringify({
-    type: 'FGSP_PAYMENT_CONFIRM',
-    paymentHash: '0x' + Math.random().toString(16).slice(2).padEnd(64, '0'),
-    amount_ckb: pendingPayment.amount_ckb,
-  }));
-
-  // Also actually send via Fiber if invoice available
-  if (pendingPayment.invoice && window.fiberquest) {
-    try {
-      await window.fiberquest.fiber.sendPayment(pendingPayment.invoice);
-    } catch(e) {
-      console.warn('Fiber payment failed:', e.message);
-    }
-  }
-
-  closeModal();
-}
-
-function closeModal() {
-  document.getElementById('payModal').classList.remove('open');
-  pendingPayment = null;
-}
-
-function showTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
-}
-
-// ── Boot ──────────────────────────────────────────────────────────────────
+// Boot
 if (window.fiberquest) {
-  initFiber();
+  init();
 } else {
-  // Running in browser (not Electron) — show warning
-  document.getElementById('fiberStatus').textContent = 'Browser mode (no Fiber)';
+  alert('FiberQuest API not available - running in browser mode');
 }
 </script>
+
 </body>
 </html>
