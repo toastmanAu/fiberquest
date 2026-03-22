@@ -55,7 +55,16 @@ class RetroArchClient {
     const parts = msg.split(' ');
     if (parts[0] !== 'READ_CORE_MEMORY') return;
     const addr = parts[1].toLowerCase();
-    const value = parseInt(parts[2], 16);
+
+    // Extract all bytes from response: "READ_CORE_MEMORY 0x1828 ff 00" → [ff, 00]
+    const bytes = parts.slice(2).map(b => parseInt(b, 16));
+
+    // Reconstruct value: single byte or multi-byte little-endian
+    let value = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      value |= (bytes[i] << (i * 8));  // Little-endian: LSB first
+    }
+
     const cb = this.pending.get(addr);
     if (cb) { this.pending.delete(addr); cb(value); }
   }
