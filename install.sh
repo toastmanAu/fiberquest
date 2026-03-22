@@ -126,9 +126,22 @@ else
 fi
 chmod +x "${DEST}.AppImage"
 
+# ── Fix missing libz.so symlink on arm64 (Pi OS / Ubuntu 24.04) ────────────
+# Some ARM64 distros ship libz.so.1 but not the unversioned libz.so,
+# which causes the AppImage Chromium to fail with "libz.so: not found"
+if [[ "$APPIMAGE_ARCH" == "arm64" ]]; then
+  LIBZ_SO="/usr/lib/aarch64-linux-gnu/libz.so"
+  LIBZ_SO1="/usr/lib/aarch64-linux-gnu/libz.so.1"
+  if [[ ! -f "$LIBZ_SO" && -f "$LIBZ_SO1" ]]; then
+    info "Creating missing libz.so symlink (required for AppImage on ARM64)..."
+    sudo ln -sf "$LIBZ_SO1" "$LIBZ_SO" && ok "libz.so symlink created" || warn "Could not create libz.so symlink — app may fail to start"
+  fi
+fi
+
 # Wrapper script — adds --no-sandbox for Pi/ARM compatibility
+# Also handles Wayland (Pi OS Bookworm default) vs X11 automatically
 # (use printf, not heredoc — heredocs break when script is run via curl | bash)
-printf '#!/usr/bin/env bash\nexec "%s.AppImage" --no-sandbox "$@"\n' "${DEST}" > "${DEST}"
+printf '#!/usr/bin/env bash\n# Auto-detect Wayland vs X11\nif [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then\n  OZONE="--ozone-platform=wayland --enable-features=WaylandWindowDecorations"\nelse\n  OZONE=""\nfi\nexec "%s.AppImage" --no-sandbox $OZONE "$@"\n' "${DEST}" > "${DEST}"
 chmod +x "${DEST}"
 ok "Installed to ${DEST}.AppImage"
 
