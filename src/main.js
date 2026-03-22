@@ -10,7 +10,7 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const GameServer = require('./game-server');
 const FiberClient = require('./fiber-client');
-const TournamentManager = require('./tournament-manager');
+const { TournamentManager } = require('./tournament-manager');
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
