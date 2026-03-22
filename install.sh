@@ -67,8 +67,44 @@ check_dep() {
   else warn "$1 not found"; return 1; fi
 }
 
-check_dep curl  || { err "curl is required. Install with: sudo apt install curl"; exit 1; }
-check_dep fuse  || warn "libfuse2 may be needed for AppImage. Install with: sudo apt install libfuse2"
+check_dep curl || { err "curl is required. Install with: sudo apt install curl"; exit 1; }
+
+# AppImage requires libfuse2 — check the actual library, not the fuse binary
+check_fuse() {
+  ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2' && return 0
+  [[ -f /usr/lib/aarch64-linux-gnu/libfuse.so.2 ]] && return 0
+  [[ -f /usr/lib/x86_64-linux-gnu/libfuse.so.2  ]] && return 0
+  return 1
+}
+
+if check_fuse; then
+  ok "libfuse2 found"
+else
+  warn "libfuse2 not found — required for AppImage"
+  if command -v apt-get &>/dev/null; then
+    info "Installing libfuse2..."
+    sudo apt-get install -y libfuse2 && ok "libfuse2 installed" || {
+      err "Failed to install libfuse2. Try manually: sudo apt install libfuse2"
+      exit 1
+    }
+  elif command -v dnf &>/dev/null; then
+    info "Installing fuse-libs..."
+    sudo dnf install -y fuse-libs && ok "fuse-libs installed" || {
+      err "Failed to install fuse-libs. Try manually: sudo dnf install fuse-libs"
+      exit 1
+    }
+  elif command -v pacman &>/dev/null; then
+    info "Installing fuse2..."
+    sudo pacman -S --noconfirm fuse2 && ok "fuse2 installed" || {
+      err "Failed to install fuse2. Try manually: sudo pacman -S fuse2"
+      exit 1
+    }
+  else
+    err "Cannot auto-install libfuse2 — unknown package manager."
+    err "Install it manually then re-run this script."
+    exit 1
+  fi
+fi
 
 # ── Download AppImage ──────────────────────────────────────
 header "Downloading ${APPIMAGE_FILE}..."
