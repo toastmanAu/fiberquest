@@ -1,28 +1,23 @@
 {
   "name": "fiberquest",
-  "version": "0.1.0",
-  "description": "Retro gaming platform powered by Fiber Network micropayments",
+  "version": "0.0.1-alpha",
+  "description": "Retro gaming tournament platform powered by Fiber Network micropayments",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "NODE_ENV=development electron .",
-    "server": "node src/game-server.js",
-    "test:rpc": "node scripts/test-rpc.js",
-    "build": "electron-builder --linux",
-    "build:arm64": "electron-builder --linux --arm64",
-    "build:x64": "electron-builder --linux --x64"
+    "start":         "electron .",
+    "dev":           "NODE_ENV=development electron .",
+    "server":        "node src/game-server.js",
+    "test:rpc":      "node scripts/test-rpc.js",
+    "build":         "electron-builder --linux",
+    "build:x64":     "electron-builder --linux --x64",
+    "build:arm64":   "electron-builder --linux --arm64",
+    "build:all":     "electron-builder --linux --x64 && electron-builder --linux --arm64",
+    "release":       "electron-builder --linux --publish always",
+    "release:x64":   "electron-builder --linux --x64  --publish always",
+    "release:arm64": "electron-builder --linux --arm64 --publish always"
   },
   "dependencies": {
-    "@ckb-ccc/ccc": "^1.1.25",
-    "@ckb-ccc/connector-react": "^1.0.34",
-    "@ckb-ccc/core": "^1.12.5",
-    "@ckb-ccc/spore": "^1.5.17",
-    "@ckb-ccc/ssri": "^0.2.22",
-    "@nervosnetwork/ckb-sdk-utils": "^0.109.5",
-    "@nervosnetwork/ckb-types": "^0.109.5",
-    "axios": "^1.6.0",
-    "bignumber.js": "^10.0.2",
-    "blake2b": "^2.1.4",
+    "electron-updater": "^6.3.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -32,14 +27,36 @@
   "build": {
     "appId": "com.wyltek.fiberquest",
     "productName": "FiberQuest",
+    "copyright": "Copyright © 2026 Wyltek",
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "games/**/*",
+      "!**/*.md",
+      "!**/test*",
+      "!**/scripts/**"
+    ],
     "linux": {
       "target": [
-        "AppImage"
+        { "target": "AppImage", "arch": ["x64", "arm64"] },
+        { "target": "deb",      "arch": ["x64", "arm64"] }
       ],
-      "category": "Game"
+      "category": "Game",
+      "synopsis": "Retro gaming tournament platform with Fiber Network micropayments",
+      "description": "Host and play retro gaming tournaments with real micropayment entry fees and automatic prize payouts via the Fiber Network (CKB Layer 2)."
     },
-    "extraMetadata": {
-      "main": "src/main.js"
+    "publish": {
+      "provider": "github",
+      "owner": "toastmanAu",
+      "repo": "fiberquest"
+    },
+    "appImage": {
+      "license": "MIT"
+    },
+    "deb": {
+      "depends": [],
+      "afterInstall": "build/scripts/after-install.sh",
+      "afterRemove":  "build/scripts/after-remove.sh"
     }
   }
 }

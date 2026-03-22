@@ -8,72 +8,227 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
+  /* ─────────────────────────────────────────────────────────
+     FLUID SCALE TOKENS
+     Tested across: 1024×600 → 1920×1080 → 2560×1440 → 4K
+     clamp(MIN, FLUID, MAX)  — fluid = vw-based
+  ───────────────────────────────────────────────────────── */
   :root {
-    --bg: #0d0d0d; --surface: #111; --dark: #050505;
-    --green: #39ff14; --cyan: #00e5ff; --red: #ff2052;
-    --yellow: #ffe600; --purple: #c77dff;
-    --text: #e0e0e0; --muted: #555;
-    --border: #222;
+    /* Colour palette */
+    --bg:      #0d0d0d;
+    --surface: #111;
+    --dark:    #050505;
+    --green:   #39ff14;
+    --cyan:    #00e5ff;
+    --red:     #ff2052;
+    --yellow:  #ffe600;
+    --purple:  #c77dff;
+    --text:    #e0e0e0;
+    --muted:   #666;
+    --border:  #2a2a2a;
+
+    /* Font scale  —  xs/sm/md/lg/xl/2xl */
+    --fs-xs:  clamp(8px,  0.55vw, 14px);   /* tiny labels, status detail  */
+    --fs-sm:  clamp(10px, 0.75vw, 18px);   /* body, inputs, buttons       */
+    --fs-md:  clamp(12px, 0.95vw, 22px);   /* sub-headings, slot labels   */
+    --fs-lg:  clamp(16px, 1.3vw,  32px);   /* section titles              */
+    --fs-xl:  clamp(22px, 1.9vw,  48px);   /* view titles                 */
+    --fs-2xl: clamp(28px, 2.8vw,  72px);   /* home logo text / results    */
+
+    /* Spacing scale */
+    --sp-xs:  clamp(4px,  0.35vw, 10px);
+    --sp-sm:  clamp(8px,  0.6vw,  18px);
+    --sp-md:  clamp(14px, 1.1vw,  32px);
+    --sp-lg:  clamp(20px, 1.7vw,  48px);
+    --sp-xl:  clamp(28px, 2.4vw,  64px);
+
+    /* Component sizes */
+    --header-h:   clamp(48px, 4.5vw, 90px);
+    --dot-size:   clamp(8px,  0.55vw, 14px);
+    --btn-pad-v:  clamp(8px,  0.6vw,  18px);
+    --btn-pad-h:  clamp(14px, 1.1vw,  32px);
+    --input-pad:  clamp(8px,  0.6vw,  16px);
+    --border-w:   clamp(1px,  0.12vw, 3px);
+    --radius:     clamp(2px,  0.2vw,  6px);
   }
 
+  /* ── Reset ── */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body {
     background: var(--bg);
     color: var(--text);
     font-family: 'Press Start 2P', monospace;
-    font-size: 10px;
-    line-height: 1.6;
+    font-size: var(--fs-sm);
+    line-height: 1.7;
     overflow: hidden;
   }
 
-  /* Header */
+  /* ── Header ────────────────────────────────────────────── */
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1.5rem;
-    border-bottom: 2px solid var(--green);
+    padding: 0 var(--sp-md);
+    border-bottom: var(--border-w) solid var(--green);
     background: var(--dark);
-    height: 50px;
+    height: var(--header-h);
+    flex-shrink: 0;
+    gap: var(--sp-md);
   }
 
   .logo {
     color: var(--green);
-    font-size: 14px;
-    letter-spacing: 2px;
+    font-size: var(--fs-lg);
+    letter-spacing: 0.15em;
     text-shadow: 0 0 12px var(--green);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
+  .logo:hover { text-shadow: 0 0 28px var(--green); }
+  .logo span  { color: var(--cyan); }
 
-  .logo span { color: var(--cyan); }
-
-  .status {
+  /* ── Update ticker bar ──────────────────────────────────── */
+  #update-bar {
+    position: fixed;
+    bottom: -52px;
+    left: 0; right: 0;
+    height: 40px;
+    background: #0a1a0a;
+    border-top: 1px solid var(--green);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 8px;
+    z-index: 8000;
+    transition: bottom 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    overflow: hidden;
+    gap: 0;
   }
+  #update-bar.visible { bottom: 0; }
+  #update-bar .ub-badge {
+    flex-shrink: 0;
+    background: var(--green);
+    color: #000;
+    font-family: var(--font-pixel);
+    font-size: 9px;
+    padding: 0 10px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+  #update-bar .ub-badge.downloading { background: var(--yellow); }
+  #update-bar .ub-badge.ready       { background: var(--cyan); }
+  #update-bar .ub-ticker-wrap {
+    flex: 1;
+    overflow: hidden;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    mask-image: linear-gradient(to right, transparent 0, black 40px, black calc(100% - 40px), transparent 100%);
+  }
+  #update-bar .ub-ticker {
+    display: inline-flex;
+    gap: 6ch;
+    white-space: nowrap;
+    font-family: var(--font-pixel);
+    font-size: 9px;
+    color: var(--green);
+    animation: ticker-scroll 18s linear infinite;
+  }
+  #update-bar .ub-ticker.downloading { color: var(--yellow); animation-duration: 12s; }
+  #update-bar .ub-ticker.ready       { color: var(--cyan);   animation-duration: 10s; }
+  @keyframes ticker-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  #update-bar .ub-progress {
+    flex-shrink: 0;
+    width: 120px;
+    height: 6px;
+    background: #1a2a1a;
+    border: 1px solid var(--green);
+    margin: 0 12px;
+    display: none;
+  }
+  #update-bar .ub-progress-fill {
+    height: 100%;
+    background: var(--yellow);
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+  #update-bar .ub-btn {
+    flex-shrink: 0;
+    font-family: var(--font-pixel);
+    font-size: 8px;
+    background: var(--cyan);
+    color: #000;
+    border: none;
+    padding: 6px 12px;
+    cursor: pointer;
+    margin-right: 12px;
+    letter-spacing: 0.05em;
+    display: none;
+  }
+  #update-bar .ub-btn:hover { background: #fff; }
+  #update-bar .ub-dismiss {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-family: var(--font-pixel);
+    font-size: 9px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 12px;
+    height: 100%;
+  }
+  #update-bar .ub-dismiss:hover { color: var(--text); }
+
+  /* ── Service status bar ─────────────────────────────────── */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-md);
+    flex-shrink: 0;
+  }
+
+  .svc {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-xs);
+    color: var(--muted);
+    transition: color 0.3s;
+    cursor: default;
+  }
+  .svc.online  { color: var(--green); }
+  .svc.warn    { color: var(--yellow); }
+  .svc.offline { color: var(--red); }
 
   .dot {
-    width: 8px;
-    height: 8px;
+    width:  var(--dot-size);
+    height: var(--dot-size);
     border-radius: 50%;
     background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s, box-shadow 0.3s;
   }
+  .svc.online  .dot { background: var(--green);  box-shadow: 0 0 8px var(--green); }
+  .svc.warn    .dot { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  .svc.offline .dot { background: var(--red);    box-shadow: 0 0 6px var(--red); }
 
-  .dot.online {
-    background: var(--green);
-    box-shadow: 0 0 6px var(--green);
-  }
+  .svc-label  { font-size: var(--fs-xs); line-height: 1.2; }
+  .svc-detail { font-size: calc(var(--fs-xs) * 0.85); color: var(--muted); }
 
-  /* Main container */
+  /* ── App shell ──────────────────────────────────────────── */
   .app {
-    height: calc(100vh - 50px);
+    height: calc(100vh - var(--header-h));
     position: relative;
     overflow: hidden;
   }
 
-  /* Views */
+  /* ── Views ──────────────────────────────────────────────── */
   .view {
     position: absolute;
     inset: 0;
@@ -83,408 +238,403 @@
     justify-content: center;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.3s;
+    transition: opacity 0.25s;
     overflow-y: auto;
-    padding: 2rem;
+    padding: var(--sp-lg) var(--sp-md);
   }
+  .view.active { opacity: 1; pointer-events: auto; }
 
-  .view.active {
-    opacity: 1;
-    pointer-events: all;
-  }
-
-  /* ── View 1: Setup ── */
-  .setup-form {
-    width: 100%;
-    max-width: 400px;
-  }
-
-  .form-title {
-    text-align: center;
-    color: var(--green);
-    font-size: 16px;
-    text-shadow: 0 0 20px var(--green);
-    margin-bottom: 2rem;
-  }
-
-  .form-group {
-    margin-bottom: 1.5rem;
-  }
-
-  .form-label {
-    display: block;
-    color: var(--muted);
-    font-size: 7px;
-    margin-bottom: 0.5rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-
-  .form-control {
-    width: 100%;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: 'Press Start 2P', monospace;
-    font-size: 9px;
-    padding: 0.6rem 0.8rem;
-    border-radius: 2px;
-    outline: none;
-  }
-
-  .form-control:focus {
-    border-color: var(--green);
-    box-shadow: 0 0 8px rgba(57, 255, 20, 0.3);
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
+  /* ── Shared: buttons ────────────────────────────────────── */
   .btn {
     background: transparent;
-    border: 2px solid var(--green);
+    border: var(--border-w) solid var(--green);
     color: var(--green);
     font-family: 'Press Start 2P', monospace;
-    font-size: 9px;
-    padding: 0.6rem 1.5rem;
+    font-size: var(--fs-sm);
+    padding: var(--btn-pad-v) var(--btn-pad-h);
     cursor: pointer;
     transition: all 0.15s;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 0.08em;
+    border-radius: var(--radius);
+    white-space: nowrap;
   }
+  .btn:hover          { background: var(--green); color: var(--bg); box-shadow: 0 0 16px rgba(57,255,20,0.4); }
+  .btn.cyan           { border-color: var(--cyan);  color: var(--cyan); }
+  .btn.cyan:hover     { background:   var(--cyan);  color: var(--bg);   box-shadow: 0 0 16px rgba(0,229,255,0.4); }
+  .btn.danger         { border-color: var(--red);   color: var(--red); }
+  .btn.danger:hover   { background:   var(--red);   color: var(--bg); }
+  .btn.muted          { border-color: var(--muted); color: var(--muted); font-size: var(--fs-xs); }
+  .btn.muted:hover    { border-color: var(--text);  color: var(--text); background: transparent; }
+  .btn:disabled       { opacity: 0.35; cursor: not-allowed; }
+  .btn:disabled:hover { background: transparent; color: inherit; box-shadow: none; }
 
-  .btn:hover {
-    background: var(--green);
-    color: var(--bg);
+  /* ── Shared: forms ──────────────────────────────────────── */
+  .form-label {
+    display: block;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    margin-bottom: var(--sp-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
   }
-
-  .btn.danger {
-    border-color: var(--red);
-    color: var(--red);
+  .form-control {
+    width: 100%;
+    background: var(--surface);
+    border: var(--border-w) solid var(--border);
+    color: var(--text);
+    font-family: 'Press Start 2P', monospace;
+    font-size: var(--fs-sm);
+    padding: var(--input-pad);
+    border-radius: var(--radius);
+    outline: none;
   }
-
-  .btn.danger:hover {
-    background: var(--red);
-    color: var(--bg);
+  .form-control:focus {
+    border-color: var(--green);
+    box-shadow: 0 0 10px rgba(57,255,20,0.25);
   }
+  .form-group { margin-bottom: var(--sp-sm); }
+  .form-row   { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-sm); margin-bottom: var(--sp-sm); }
 
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ── View 2: Waiting Room ── */
-  .waiting-header {
+  /* Shared title */
+  .view-title {
     text-align: center;
-    margin-bottom: 2rem;
+    font-size: var(--fs-xl);
+    text-shadow: 0 0 24px currentColor;
+    margin-bottom: var(--sp-lg);
   }
+  .view-title.green { color: var(--green); }
+  .view-title.cyan  { color: var(--cyan); }
 
-  .waiting-title {
+  /* ─────────────────────────────────────────────────────────
+     VIEW 0: HOME
+  ───────────────────────────────────────────────────────── */
+  .home-logo-img {
+    width:  clamp(280px, 38vw, 700px);
+    height: auto;
+    border-radius: clamp(4px, 0.4vw, 12px);
+    box-shadow: 0 0 clamp(20px,3vw,60px) rgba(57,255,20,0.45),
+                0 0 clamp(40px,6vw,120px) rgba(57,255,20,0.15);
+    margin-bottom: var(--sp-md);
+  }
+  .home-sub {
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.25em;
+    margin-bottom: var(--sp-lg);
+    text-align: center;
+  }
+  .home-menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+    width: clamp(240px, 28vw, 520px);
+  }
+  .menu-item {
+    background: var(--surface);
+    border: var(--border-w) solid var(--border);
+    color: var(--text);
+    font-family: 'Press Start 2P', monospace;
+    font-size: var(--fs-md);
+    padding: var(--sp-sm) var(--sp-md);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+    text-align: left;
+    border-radius: var(--radius);
+  }
+  .menu-item:hover {
+    border-color: var(--green);
     color: var(--green);
-    font-size: 16px;
-    text-shadow: 0 0 20px var(--green);
-    margin-bottom: 0.5rem;
+    box-shadow: 0 0 20px rgba(57,255,20,0.2);
+  }
+  .menu-icon { font-size: var(--fs-lg); min-width: 1.5em; }
+  .menu-text { flex: 1; }
+  .menu-sub  { font-size: var(--fs-xs); color: var(--muted); margin-top: var(--sp-xs); }
+  .menu-item:hover .menu-sub { color: var(--green); opacity: 0.7; }
+
+  /* ─────────────────────────────────────────────────────────
+     VIEW 1: SETUP
+  ───────────────────────────────────────────────────────── */
+  .setup-form {
+    width: 100%;
+    max-width: clamp(320px, 36vw, 600px);
   }
 
-  .tournament-id {
-    color: var(--cyan);
-    font-size: 8px;
-    margin-bottom: 0.5rem;
-  }
-
-  .status-text {
-    color: var(--yellow);
-    font-size: 8px;
-  }
+  /* ─────────────────────────────────────────────────────────
+     VIEW 2: WAITING ROOM
+  ───────────────────────────────────────────────────────── */
+  .waiting-header { text-align: center; margin-bottom: var(--sp-md); }
+  .tournament-id  { color: var(--cyan);   font-size: var(--fs-xs); margin-bottom: var(--sp-xs); }
+  .status-text    { color: var(--yellow); font-size: var(--fs-sm); }
 
   .player-slots {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(140px, 16vw, 240px), 1fr));
+    gap: var(--sp-md);
     width: 100%;
-    max-width: 600px;
-    margin: 2rem 0;
+    max-width: clamp(400px, 70vw, 900px);
+    margin: var(--sp-md) 0;
   }
-
   .player-slot {
     background: var(--surface);
-    border: 2px solid var(--border);
-    border-radius: 4px;
-    padding: 1rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: clamp(4px, 0.4vw, 8px);
+    padding: var(--sp-sm);
     text-align: center;
   }
-
   .player-slot.active {
     border-color: var(--green);
-    box-shadow: 0 0 12px rgba(57, 255, 20, 0.3);
+    box-shadow: 0 0 16px rgba(57,255,20,0.3);
   }
-
   .slot-input {
     width: 100%;
     background: var(--dark);
-    border: 1px solid var(--border);
+    border: var(--border-w) solid var(--cyan);
     color: var(--text);
     font-family: 'Press Start 2P', monospace;
-    font-size: 8px;
-    padding: 0.5rem;
-    margin-bottom: 0.75rem;
-    border-radius: 2px;
+    font-size: var(--fs-sm);
+    padding: var(--input-pad);
+    margin-bottom: var(--sp-xs);
+    border-radius: var(--radius);
     outline: none;
   }
-
-  .slot-input:focus {
-    border-color: var(--cyan);
-  }
+  .slot-input::placeholder { color: var(--muted); }
+  .slot-input:focus { border-color: var(--green); box-shadow: 0 0 10px rgba(57,255,20,0.3); }
 
   .slot-button {
     width: 100%;
     background: transparent;
-    border: 1px solid var(--cyan);
+    border: var(--border-w) solid var(--cyan);
     color: var(--cyan);
     font-family: 'Press Start 2P', monospace;
-    font-size: 7px;
-    padding: 0.4rem;
-    margin-bottom: 0.5rem;
+    font-size: var(--fs-xs);
+    padding: var(--sp-xs) var(--sp-sm);
+    margin-bottom: var(--sp-xs);
     cursor: pointer;
     transition: all 0.15s;
+    border-radius: var(--radius);
   }
+  .slot-button:hover    { background: var(--cyan); color: var(--bg); }
+  .slot-button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .slot-button:disabled:hover { background: transparent; color: var(--cyan); }
 
-  .slot-button:hover {
-    background: var(--cyan);
-    color: var(--bg);
-  }
-
-  .slot-status {
-    font-size: 8px;
-    color: var(--muted);
-    margin-bottom: 0.5rem;
-  }
-
-  .slot-status.paid {
-    color: var(--green);
-  }
+  .slot-status       { font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-xs); }
+  .slot-status.paid  { color: var(--green); }
 
   .invoice-box {
     background: var(--dark);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 0.5rem;
-    margin-top: 0.5rem;
-    max-height: 80px;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--sp-xs);
+    margin-top: var(--sp-xs);
+    max-height: clamp(70px, 8vh, 120px);
     overflow: hidden;
   }
-
   .invoice-text {
-    font-size: 5px;
+    font-size: clamp(5px, 0.4vw, 9px);
     color: var(--cyan);
     font-family: monospace;
     word-break: break-all;
     white-space: pre-wrap;
-    margin-bottom: 0.3rem;
+    margin-bottom: var(--sp-xs);
   }
-
   .invoice-copy {
     width: 100%;
-    font-size: 6px;
-    padding: 0.2rem;
+    font-size: var(--fs-xs);
+    padding: var(--sp-xs);
     background: transparent;
-    border: 1px solid var(--cyan);
+    border: var(--border-w) solid var(--cyan);
     color: var(--cyan);
     cursor: pointer;
+    font-family: 'Press Start 2P', monospace;
+    border-radius: var(--radius);
   }
 
-  /* ── View 3: Live ── */
-  .live-header {
-    text-align: center;
-    margin-bottom: 2rem;
-    color: var(--green);
-    font-size: 14px;
-    text-shadow: 0 0 20px var(--green);
-  }
-
-  .live-subheader {
-    color: var(--muted);
-    font-size: 8px;
-    margin-top: 0.5rem;
-  }
+  /* ─────────────────────────────────────────────────────────
+     VIEW 3: LIVE
+  ───────────────────────────────────────────────────────── */
+  .live-subheader { color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-xs); }
 
   .vs-container {
     display: flex;
     align-items: center;
-    gap: 3rem;
-    margin: 2rem 0;
+    gap: clamp(16px, 3vw, 60px);
+    margin: var(--sp-md) 0;
     width: 100%;
-    max-width: 600px;
+    max-width: clamp(400px, 65vw, 900px);
   }
-
-  .player-live {
-    flex: 1;
-    text-align: center;
-  }
-
-  .player-name-live {
-    color: var(--cyan);
-    font-size: 11px;
-    margin-bottom: 0.75rem;
-  }
-
+  .player-live      { flex: 1; text-align: center; }
+  .player-name-live { color: var(--cyan); font-size: var(--fs-lg); margin-bottom: var(--sp-sm); }
   .health-bar {
     background: var(--dark);
-    border: 1px solid var(--border);
-    height: 20px;
-    border-radius: 2px;
+    border: var(--border-w) solid var(--border);
+    height: clamp(16px, 1.8vh, 32px);
+    border-radius: var(--radius);
     overflow: hidden;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--sp-xs);
   }
-
   .health-fill {
     height: 100%;
     background: linear-gradient(90deg, var(--green), var(--yellow));
     transition: width 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
     color: var(--bg);
-    font-size: 7px;
+    font-size: var(--fs-xs);
     font-weight: bold;
   }
-
-  .vs-divider {
-    color: var(--green);
-    font-size: 20px;
-    font-weight: bold;
-  }
+  .vs-divider { color: var(--green); font-size: var(--fs-2xl); line-height: 1; }
 
   .timer {
-    position: absolute;
-    top: 100px;
-    left: 50%;
-    transform: translateX(-50%);
+    text-align: center;
     color: var(--yellow);
-    font-size: 12px;
-    text-shadow: 0 0 12px var(--yellow);
+    font-size: var(--fs-xl);
+    text-shadow: 0 0 16px var(--yellow);
+    margin: var(--sp-sm) 0;
   }
+  .timer-label { font-size: var(--fs-xs); color: var(--muted); }
+  .live-controls { margin-top: var(--sp-md); display: flex; gap: var(--sp-sm); justify-content: center; }
 
-  .timer-label {
-    font-size: 8px;
-    color: var(--muted);
-  }
-
-  .live-controls {
-    margin-top: 2rem;
-    display: flex;
-    gap: 1rem;
-    justify-content: center;
-  }
-
-  /* ── View 4: Results ── */
+  /* ─────────────────────────────────────────────────────────
+     VIEW 4: RESULTS
+  ───────────────────────────────────────────────────────── */
   .results-header {
     color: var(--green);
-    font-size: 18px;
-    text-shadow: 0 0 30px var(--green);
-    margin-bottom: 1rem;
+    font-size: var(--fs-2xl);
+    text-shadow: 0 0 40px var(--green);
+    margin-bottom: var(--sp-sm);
     animation: pulse 1s infinite;
   }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.65} }
   .winner-name {
     color: var(--yellow);
-    font-size: 14px;
-    text-shadow: 0 0 20px var(--yellow);
-    margin-bottom: 2rem;
+    font-size: var(--fs-xl);
+    text-shadow: 0 0 24px var(--yellow);
+    margin-bottom: var(--sp-lg);
   }
-
   .scoreboard {
     background: var(--surface);
-    border: 2px solid var(--green);
-    border-radius: 4px;
-    padding: 1.5rem;
-    max-width: 500px;
-    margin: 1rem 0;
+    border: var(--border-w) solid var(--green);
+    border-radius: clamp(4px, 0.4vw, 8px);
+    padding: var(--sp-md);
+    max-width: clamp(340px, 55vw, 700px);
     width: 100%;
   }
-
   .score-row {
     display: grid;
-    grid-template-columns: 60px 1fr 80px 100px;
-    gap: 1rem;
-    padding: 0.75rem;
+    grid-template-columns: clamp(36px,3.5vw,60px) 1fr clamp(50px,5vw,90px) clamp(70px,7vw,120px);
+    gap: var(--sp-sm);
+    padding: var(--sp-sm);
     border-bottom: 1px solid var(--border);
+    font-size: var(--fs-sm);
     align-items: center;
-    font-size: 8px;
   }
+  .score-row:last-child { border-bottom: none; }
+  .score-rank   { color: var(--yellow); }
+  .score-name   { color: var(--cyan); word-break: break-all; }
+  .score-value  { text-align: right; color: var(--green); }
+  .score-payout { text-align: right; color: var(--purple); }
+  .results-actions { margin-top: var(--sp-lg); display: flex; gap: var(--sp-sm); justify-content: center; }
 
-  .score-row:last-child {
-    border-bottom: none;
+  /* ─────────────────────────────────────────────────────────
+     VIEW 5: SETTINGS
+  ───────────────────────────────────────────────────────── */
+  .settings-wrap {
+    width: 100%;
+    max-width: clamp(320px, 45vw, 680px);
   }
-
-  .score-rank {
-    color: var(--yellow);
-    font-weight: bold;
-  }
-
-  .score-name {
+  .settings-section { margin-bottom: var(--sp-md); }
+  .settings-section-title {
     color: var(--cyan);
-    word-break: break-all;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.2em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--sp-xs);
+    margin-bottom: var(--sp-sm);
+    text-transform: uppercase;
+  }
+  .settings-actions { display: flex; gap: var(--sp-sm); margin-top: var(--sp-md); justify-content: center; flex-wrap: wrap; }
+  .save-msg { text-align: center; font-size: var(--fs-sm); color: var(--green); margin-top: var(--sp-sm); min-height: 1.4em; }
+  .input-hint { font-size: clamp(6px, 0.45vw, 11px); color: var(--muted); margin-top: var(--sp-xs); }
+
+  /* ─────────────────────────────────────────────────────────
+     RESPONSIVE OVERRIDES
+  ───────────────────────────────────────────────────────── */
+
+  /* 1024×600 Pi screen — squeeze header, hide status detail */
+  @media (max-width: 1100px) {
+    .svc-detail { display: none; }
+    .home-menu  { width: 90vw; }
+    .setup-form { max-width: 90vw; }
+    .settings-wrap { max-width: 90vw; }
   }
 
-  .score-value {
-    text-align: right;
-    color: var(--green);
-  }
-
-  .score-payout {
-    text-align: right;
-    color: var(--purple);
-  }
-
-  .results-actions {
-    margin-top: 2rem;
-    display: flex;
-    gap: 1rem;
-    justify-content: center;
-  }
-
-  /* Loading spinner */
-  .spinner {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border);
-    border-top-color: var(--green);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  /* 4K — bump up glow intensity */
+  @media (min-width: 3000px) {
+    .logo { text-shadow: 0 0 24px var(--green), 0 0 48px rgba(57,255,20,0.4); }
+    .svc.online .dot  { box-shadow: 0 0 14px var(--green), 0 0 28px rgba(57,255,20,0.3); }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">FIBER<span>QUEST</span></div>
-  <div class="status">
-    <div class="dot" id="fiberDot"></div>
-    <span id="fiberStatus">Connecting...</span>
+  <div class="logo" onclick="goHome()">FIBER<span>QUEST</span></div>
+  <div class="status-bar">
+    <div class="svc" id="svc-fiber">
+      <div class="dot"></div>
+      <div>
+        <div class="svc-label">FIBER</div>
+        <div class="svc-detail" id="svc-fiber-detail">checking...</div>
+      </div>
+    </div>
+    <div class="svc" id="svc-channels">
+      <div class="dot"></div>
+      <div>
+        <div class="svc-label">CHANNELS</div>
+        <div class="svc-detail" id="svc-channels-detail">—</div>
+      </div>
+    </div>
+    <div class="svc" id="svc-retroarch">
+      <div class="dot"></div>
+      <div>
+        <div class="svc-label">RETROARCH</div>
+        <div class="svc-detail" id="svc-retroarch-detail">checking...</div>
+      </div>
+    </div>
   </div>
 </header>
 
 <div class="app">
 
-  <!-- View 1: Setup Tournament -->
-  <div class="view active" id="view-setup">
+  <!-- ── VIEW 0: HOME ─────────────────────────────────────── -->
+  <div class="view active" id="view-home">
+    <img class="home-logo-img" src="logo.jpeg" alt="FiberQuest">
+    <div class="home-sub">LIGHTNING GAMING TOURNAMENT PLATFORM</div>
+    <nav class="home-menu">
+      <button class="menu-item" onclick="showView('view-setup')">
+        <span class="menu-icon">🎮</span>
+        <div class="menu-text">
+          TOURNAMENT
+          <div class="menu-sub">Create &amp; manage a game tournament</div>
+        </div>
+      </button>
+      <button class="menu-item" onclick="showView('view-settings')">
+        <span class="menu-icon">⚙️</span>
+        <div class="menu-text">
+          SETTINGS
+          <div class="menu-sub">Configure nodes, RetroArch, defaults</div>
+        </div>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ── VIEW 1: SETUP ────────────────────────────────────── -->
+  <div class="view" id="view-setup">
     <div class="setup-form">
-      <div class="form-title">🎮 SETUP TOURNAMENT</div>
+      <div class="view-title green">SETUP TOURNAMENT</div>
 
       <div class="form-group">
         <label class="form-label">Game</label>
@@ -529,27 +679,29 @@
         </div>
       </div>
 
-      <button class="btn" onclick="startSetup()" style="width:100%;margin-top:2rem">
-        CREATE TOURNAMENT →
-      </button>
+      <div style="display:flex;gap:var(--sp-sm);margin-top:var(--sp-md)">
+        <button class="btn muted" onclick="goHome()">← BACK</button>
+        <button id="launchBtn" class="btn muted" style="display:none" onclick="launchGame()">▶ LAUNCH GAME</button>
+        <button class="btn" style="flex:1" onclick="startSetup()">CREATE TOURNAMENT →</button>
+      </div>
     </div>
   </div>
 
-  <!-- View 2: Waiting Room -->
+  <!-- ── VIEW 2: WAITING ROOM ─────────────────────────────── -->
   <div class="view" id="view-waiting">
     <div class="waiting-header">
-      <div class="waiting-title">⏳ WAITING ROOM</div>
+      <div class="view-title green">WAITING ROOM</div>
       <div class="tournament-id" id="tourId"></div>
       <div class="status-text" id="waitStatus"></div>
     </div>
     <div class="player-slots" id="playerSlots"></div>
-    <button class="btn danger" onclick="goBack()">← BACK</button>
+    <button class="btn muted" onclick="goHome()">← CANCEL</button>
   </div>
 
-  <!-- View 3: Live Tournament -->
+  <!-- ── VIEW 3: LIVE ──────────────────────────────────────── -->
   <div class="view" id="view-live">
-    <div class="live-header">
-      <div id="gameNameLive">Game</div>
+    <div style="text-align:center">
+      <div class="view-title green" id="gameNameLive">Game</div>
       <div class="live-subheader" id="modeLive"></div>
     </div>
     <div class="timer">
@@ -576,125 +728,355 @@
     </div>
   </div>
 
-  <!-- View 4: Results -->
+  <!-- ── VIEW 4: RESULTS ──────────────────────────────────── -->
   <div class="view" id="view-results">
     <div class="results-header">🏆 WINNER!</div>
     <div class="winner-name" id="winnerName">—</div>
     <div class="scoreboard" id="scoreboardContent"></div>
     <div class="results-actions">
-      <button class="btn" onclick="goToSetup()">NEW TOURNAMENT →</button>
+      <button class="btn" onclick="goHome()">NEW TOURNAMENT →</button>
     </div>
   </div>
 
+  <!-- ── VIEW 5: SETTINGS ─────────────────────────────────── -->
+  <div class="view" id="view-settings">
+    <div class="settings-wrap">
+      <div class="view-title cyan">SETTINGS</div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">⚡ Fiber Node</div>
+        <div class="form-group">
+          <label class="form-label">RPC URL</label>
+          <input type="text" class="form-control" id="cfg-fiberRpcUrl" placeholder="http://127.0.0.1:8227">
+          <div class="input-hint">Tunnel: ssh -f -N -L 8227:127.0.0.1:8226 user@host</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">🎮 RetroArch</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Host IP</label>
+            <input type="text" class="form-control" id="cfg-retroarchHost" placeholder="192.168.68.84">
+          </div>
+          <div class="form-group">
+            <label class="form-label">UDP Port</label>
+            <input type="number" class="form-control" id="cfg-retroarchUdp" placeholder="55355">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">🌐 Game Server</div>
+        <div class="form-group">
+          <label class="form-label">WebSocket Port</label>
+          <input type="number" class="form-control" id="cfg-gameServerPort" placeholder="8765">
+          <div class="input-hint">HMI displays connect here (ESP32, browser)</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">🏆 Tournament Defaults</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Entry Fee (CKB)</label>
+            <input type="number" class="form-control" id="cfg-defaultEntryFee" placeholder="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Players</label>
+            <select class="form-control" id="cfg-defaultPlayers">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Time Limit (min)</label>
+            <input type="number" class="form-control" id="cfg-defaultTimeLimit" placeholder="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Currency</label>
+            <select class="form-control" id="cfg-defaultCurrency">
+              <option value="Fibt">Fibt (testnet)</option>
+              <option value="Fibb">Fibb (mainnet)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-actions">
+        <button class="btn muted" onclick="goHome()">← BACK</button>
+        <button class="btn cyan" onclick="saveSettings()">SAVE SETTINGS</button>
+        <button class="btn muted" onclick="resetSettings()">RESET</button>
+      </div>
+      <div class="save-msg" id="saveMsg"></div>
+    </div>
+  </div>
+
+  <!-- ── FIRST-RUN SETUP MODAL ────────────────────────────── -->
+  <div id="firstrun-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:none;align-items:center;justify-content:center">
+    <div style="background:var(--surface);border:1px solid var(--green);padding:2rem;max-width:520px;width:90%;border-radius:4px">
+      <div style="font-family:var(--font-pixel);font-size:var(--fs-sm);color:var(--green);margin-bottom:1.5rem">FIRST RUN SETUP</div>
+
+      <div id="frs-check" style="color:var(--muted);margin-bottom:1.5rem;font-size:var(--fs-xs)">Checking RetroArch...</div>
+
+      <!-- RetroArch not found panel -->
+      <div id="frs-noretro" style="display:none">
+        <div style="color:var(--yellow);font-size:var(--fs-xs);margin-bottom:1rem">⚠ RetroArch not found on this machine.</div>
+        <div style="color:var(--text);font-size:var(--fs-xs);margin-bottom:1.5rem">FiberQuest needs RetroArch to launch games locally. Install it now or skip to configure later in Settings.</div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem">
+          <button class="btn" style="font-size:var(--fs-xs)" onclick="installRetroArch('snap')">SNAP INSTALL</button>
+          <button class="btn muted" style="font-size:var(--fs-xs)" onclick="installRetroArch('apt')">APT INSTALL</button>
+          <button class="btn muted" style="font-size:var(--fs-xs)" onclick="installRetroArch('flatpak')">FLATPAK</button>
+        </div>
+        <div id="frs-install-status" style="color:var(--muted);font-size:var(--fs-xs);min-height:1.2em"></div>
+      </div>
+
+      <!-- RetroArch found — ROMs dir -->
+      <div id="frs-romdir">
+        <div style="color:var(--text);font-size:var(--fs-xs);margin-bottom:0.75rem">ROMs Directory</div>
+        <div style="color:var(--muted);font-size:var(--fs-xs);margin-bottom:1rem" id="frs-romdir-current">Not set — launch will use rom_name as-is from game definitions.</div>
+        <button class="btn muted" style="font-size:var(--fs-xs);margin-bottom:1.5rem" onclick="pickRomsDir()">BROWSE FOR ROMs FOLDER</button>
+      </div>
+
+      <div style="display:flex;gap:0.5rem">
+        <button class="btn" style="flex:1;font-size:var(--fs-xs)" onclick="closeFirstRun()">DONE</button>
+        <button class="btn muted" style="font-size:var(--fs-xs)" onclick="closeFirstRun()">SKIP</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .app -->
+
+<!-- ── UPDATE TICKER BAR ───────────────────────────────────── -->
+<div id="update-bar">
+  <div class="ub-badge" id="ub-badge">UPDATE</div>
+  <div class="ub-ticker-wrap">
+    <div class="ub-ticker" id="ub-ticker">
+      <span id="ub-text">NEW VERSION AVAILABLE</span>
+      <span id="ub-text-2" aria-hidden="true">NEW VERSION AVAILABLE</span>
+    </div>
+  </div>
+  <div class="ub-progress" id="ub-progress"><div class="ub-progress-fill" id="ub-fill"></div></div>
+  <button class="ub-btn" id="ub-restart" onclick="updateInstall()">↺ RESTART NOW</button>
+  <button class="ub-dismiss" onclick="updateDismiss()" title="Dismiss">✕</button>
 </div>
 
 <script>
 // ─────────────────────────────────────────────────────────────────────────
-
-// State
 let currentTournament = null;
 let gamesList = [];
 let timerInterval = null;
+let retroarchIsLocal = false;
 
-// ─────────────────────────────────────────────────────────────────────────
+// ── First-run setup ────────────────────────────────────────
+async function runFirstRunCheck(cfg) {
+  if (!retroarchIsLocal) return;   // remote RetroArch — nothing to check locally
 
-// Initialize
+  const overlay = document.getElementById('firstrun-overlay');
+  const checkEl = document.getElementById('frs-check');
+  const noRetro = document.getElementById('frs-noretro');
+  const romDir  = document.getElementById('frs-romdir');
+  const romCur  = document.getElementById('frs-romdir-current');
+
+  overlay.style.display = 'flex';
+
+  const result = await window.fiberquest.retroarch.check().catch(() => ({ found: false }));
+  if (result.found) {
+    checkEl.innerHTML = `<span style="color:var(--green)">✔ RetroArch found:</span> <span style="color:var(--muted)">${result.path}</span>`;
+    noRetro.style.display = 'none';
+  } else {
+    checkEl.innerHTML = `<span style="color:var(--red)">✘ RetroArch not found</span>`;
+    noRetro.style.display = 'block';
+  }
+
+  romDir.style.display = 'block';
+  if (cfg && cfg.romsDir) {
+    romCur.textContent = cfg.romsDir;
+    romCur.style.color = 'var(--green)';
+    // If everything looks good, skip the dialog
+    if (result.found) { overlay.style.display = 'none'; return; }
+  }
+}
+
+async function installRetroArch(method) {
+  const status = document.getElementById('frs-install-status');
+  status.textContent = `Installing via ${method}...`;
+  status.style.color = 'var(--yellow)';
+  const btns = document.querySelectorAll('#frs-noretro .btn');
+  btns.forEach(b => b.disabled = true);
+
+  const result = await window.fiberquest.retroarch.install(method).catch(e => ({ ok: false, reason: e.message }));
+  if (result.ok) {
+    status.textContent = '✔ Installed successfully!';
+    status.style.color = 'var(--green)';
+    const chk = await window.fiberquest.retroarch.check().catch(() => ({ found: false }));
+    document.getElementById('frs-check').innerHTML =
+      chk.found ? `<span style="color:var(--green)">✔ RetroArch found: ${chk.path}</span>` : `<span style="color:var(--red)">✘ Still not found</span>`;
+    document.getElementById('frs-noretro').style.display = chk.found ? 'none' : 'block';
+  } else {
+    status.textContent = '✘ Failed: ' + (result.reason || 'unknown');
+    status.style.color = 'var(--red)';
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+async function pickRomsDir() {
+  const result = await window.fiberquest.retroarch.pickRomsDir().catch(() => ({ canceled: true }));
+  if (!result.canceled) {
+    const el = document.getElementById('frs-romdir-current');
+    el.textContent = result.romsDir;
+    el.style.color = 'var(--green)';
+    updateLaunchBtn();
+  }
+}
+
+function closeFirstRun() {
+  document.getElementById('firstrun-overlay').style.display = 'none';
+}
+
 async function init() {
-  // Load games
   try {
     gamesList = await window.fiberquest.games.list();
     populateGameSelect();
-  } catch (e) {
-    console.error('Failed to load games:', e);
-  }
+  } catch (e) { console.error('Failed to load games:', e); }
 
-  // Check Fiber node
+  try {
+    retroarchIsLocal = await window.fiberquest.retroarch.isLocal();
+    updateLaunchBtn();
+  } catch (e) { console.error('Failed to check retroarch locality:', e); }
+
+  let cfg;
+  try {
+    cfg = await window.fiberquest.config.get();
+    applyConfigToForm(cfg);
+    applyDefaultsToSetup(cfg);
+  } catch (e) { console.error('Failed to load config:', e); }
+
+  window.fiberquest.tournament.onEvent(handleTournamentEvent);
+  checkServices();
+  setInterval(checkServices, 5000);
+
+  // First-run: check retroarch + roms dir on first launch
+  const seen = localStorage.getItem('fq-firstrun-done');
+  if (!seen) { await runFirstRunCheck(cfg); localStorage.setItem('fq-firstrun-done', '1'); }
+}
+
+// ── Navigation ────────────────────────────────────────────
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function goHome() {
+  currentTournament = null;
+  showView('view-home');
+}
+
+// ── Service health ────────────────────────────────────────
+function setSvc(id, state, detail) {
+  document.getElementById('svc-' + id).className = 'svc ' + state;
+  if (detail !== undefined) document.getElementById('svc-' + id + '-detail').textContent = detail;
+}
+
+async function checkServices() {
   try {
     const info = await window.fiberquest.fiber.nodeInfo();
-    document.getElementById('fiberDot').classList.add('online');
-    document.getElementById('fiberStatus').textContent = 'Fiber ready';
-  } catch (e) {
-    document.getElementById('fiberStatus').textContent = 'No Fiber node';
-  }
-
-  // Listen for tournament events
-  window.fiberquest.tournament.onEvent(handleTournamentEvent);
-}
-
-function populateGameSelect() {
-  const select = document.getElementById('gameSelect');
-  select.innerHTML = gamesList.map(g =>
-    `<option value="${g.id}">${g.name} (${g.system})</option>`
-  ).join('');
-  updateModes();
-}
-
-function updateModes() {
-  const gameId = document.getElementById('gameSelect').value;
-  const game = gamesList.find(g => g.id === gameId);
-  const modes = game?.tournament_modes || [];
-  const select = document.getElementById('modeSelect');
-  select.innerHTML = modes.map(m =>
-    `<option value="${m.id}">${m.name}</option>`
-  ).join('');
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-
-// View transitions
-function showView(viewId) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.getElementById(viewId).classList.add('active');
-}
-
-function goBack() {
-  showView('view-setup');
-}
-
-function goToSetup() {
-  currentTournament = null;
-  showView('view-setup');
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-
-// View 1: Setup
-async function startSetup() {
-  const gameId = document.getElementById('gameSelect').value;
-  const mode = document.getElementById('modeSelect').value;
-  const entryFee = parseInt(document.getElementById('entryFee').value) || 10;
-  const players = parseInt(document.getElementById('playerCount').value) || 2;
-  const timeLimit = parseInt(document.getElementById('timeLimit').value) || 10;
-  const currency = document.getElementById('currency').value;
+    const nodeId = info?.node_id || '';
+    setSvc('fiber', 'online', nodeId ? nodeId.slice(0,10) + '…' : 'connected');
+  } catch { setSvc('fiber', 'offline', 'unreachable'); }
 
   try {
-    const status = await window.fiberquest.tournament.create({
-      gameId,
-      mode,
-      entryFee,
-      players,
-      timeLimitMinutes: timeLimit,
-      currency,
-    });
+    const cs = await window.fiberquest.health.channelSummary();
+    if (cs.ok && cs.ready > 0)      setSvc('channels', 'online', `${cs.ready}/${cs.total} ready`);
+    else if (cs.ok && cs.total > 0) setSvc('channels', 'warn',   `${cs.total} pending`);
+    else if (cs.ok)                 setSvc('channels', 'warn',   'no channels');
+    else                            setSvc('channels', 'offline','no node');
+  } catch { setSvc('channels', 'offline', 'error'); }
 
-    currentTournament = status;
-    showWaitingRoom();
-  } catch (e) {
-    alert('Error creating tournament: ' + e.message);
-  }
+  try {
+    const ra = await window.fiberquest.health.retroarch();
+    if (ra.ok) setSvc('retroarch', 'online', ra.response ? ra.response.slice(0,18) : 'connected');
+    else       setSvc('retroarch', 'offline', ra.reason || 'no response');
+  } catch { setSvc('retroarch', 'offline', 'error'); }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// ── Games ─────────────────────────────────────────────────
+function populateGameSelect() {
+  const sel = document.getElementById('gameSelect');
+  if (!gamesList.length) { sel.innerHTML = '<option>No games found</option>'; return; }
+  sel.innerHTML = gamesList.map(g => `<option value="${g.id}">${g.name} (${g.system})</option>`).join('');
+  updateModes();
+}
+function updateModes() {
+  const game  = gamesList.find(g => g.id === document.getElementById('gameSelect').value);
+  const modes = game?.tournament_modes || [];
+  const sel   = document.getElementById('modeSelect');
+  sel.innerHTML = modes.length
+    ? modes.map(m => `<option value="${m.id}">${m.name}</option>`).join('')
+    : '<option value="">No modes defined</option>';
+  updateLaunchBtn();
+}
+function updateLaunchBtn() {
+  const btn = document.getElementById('launchBtn');
+  if (!btn) return;
+  const gameId = document.getElementById('gameSelect')?.value;
+  btn.style.display = (retroarchIsLocal && gameId) ? '' : 'none';
+}
+async function launchGame() {
+  const gameId = document.getElementById('gameSelect').value;
+  if (!gameId) return;
+  const btn = document.getElementById('launchBtn');
+  btn.disabled = true;
+  btn.textContent = '▶ LAUNCHING...';
+  try {
+    const result = await window.fiberquest.retroarch.launch(gameId);
+    if (!result.ok) {
+      btn.textContent = '▶ LAUNCH GAME';
+      alert('Launch failed: ' + (result.reason || 'unknown error'));
+    } else {
+      btn.textContent = '▶ RUNNING';
+      setTimeout(() => { btn.textContent = '▶ LAUNCH GAME'; btn.disabled = false; }, 3000);
+      return;
+    }
+  } catch (e) {
+    btn.textContent = '▶ LAUNCH GAME';
+    alert('Launch error: ' + e.message);
+  }
+  btn.disabled = false;
+}
+function applyDefaultsToSetup(cfg) {
+  if (cfg.defaultEntryFee)  document.getElementById('entryFee').value   = cfg.defaultEntryFee;
+  if (cfg.defaultPlayers)   document.getElementById('playerCount').value = cfg.defaultPlayers;
+  if (cfg.defaultTimeLimit) document.getElementById('timeLimit').value   = cfg.defaultTimeLimit;
+  if (cfg.defaultCurrency)  document.getElementById('currency').value    = cfg.defaultCurrency;
+}
 
-// View 2: Waiting Room
+// ── View 1: Setup ─────────────────────────────────────────
+async function startSetup() {
+  const opts = {
+    gameId:           document.getElementById('gameSelect').value,
+    mode:             document.getElementById('modeSelect').value,
+    entryFee:         parseInt(document.getElementById('entryFee').value)    || 10,
+    players:          parseInt(document.getElementById('playerCount').value) || 2,
+    timeLimitMinutes: parseInt(document.getElementById('timeLimit').value)   || 10,
+    currency:         document.getElementById('currency').value,
+  };
+  try {
+    currentTournament = await window.fiberquest.tournament.create(opts);
+    showWaitingRoom();
+  } catch (e) { alert('Error creating tournament: ' + e.message); }
+}
+
+// ── View 2: Waiting room ──────────────────────────────────
 function showWaitingRoom() {
   const t = currentTournament;
-  document.getElementById('tourId').textContent = `ID: ${t.id}`;
-  document.getElementById('waitStatus').textContent = `Waiting for ${t.players} players...`;
-
-  const slotsEl = document.getElementById('playerSlots');
-  slotsEl.innerHTML = Array(t.players).fill(null).map((_, i) =>
-    `<div class="player-slot" id="slot-${i}">
+  const n = t.maxPlayers || 2;
+  document.getElementById('tourId').textContent    = `ID: ${t.id}`;
+  document.getElementById('waitStatus').textContent = `Waiting for ${n} players...`;
+  document.getElementById('playerSlots').innerHTML  = Array(n).fill(null).map((_, i) => `
+    <div class="player-slot" id="slot-${i}">
       <input type="text" class="slot-input" id="name-${i}" placeholder="Player ${i+1}">
       <button class="slot-button" onclick="addPlayer(${i})">ADD PLAYER</button>
       <div class="slot-status" id="status-${i}">Waiting...</div>
@@ -702,175 +1084,207 @@ function showWaitingRoom() {
         <div class="invoice-text" id="invoiceText-${i}"></div>
         <button class="invoice-copy" onclick="copyInvoice(${i})">COPY</button>
       </div>
-    </div>`
-  ).join('');
-
+    </div>`).join('');
   showView('view-waiting');
 }
 
 async function addPlayer(slotIndex) {
-  const name = document.getElementById(`name-${slotIndex}`).value.trim();
-  if (!name) {
-    alert('Please enter a name');
-    return;
-  }
+  const nameEl = document.getElementById(`name-${slotIndex}`);
+  const name   = nameEl.value.trim();
+  if (!name) { nameEl.focus(); return; }
+
+  const btn = document.querySelector(`#slot-${slotIndex} .slot-button`);
+  btn.textContent = 'ADDING...'; btn.disabled = true;
 
   try {
-    const playerId = `player-${slotIndex}`;
-    const result = await window.fiberquest.tournament.addPlayer(currentTournament.id, playerId, name);
-
-    // Show invoice
+    const result = await window.fiberquest.tournament.addPlayer(currentTournament.id, `player-${slotIndex}`, name);
     document.getElementById(`status-${slotIndex}`).textContent = 'Invoice ready';
     document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
     document.getElementById(`invoiceText-${slotIndex}`).textContent = result.entryInvoice || '(invoice)';
     document.getElementById(`slot-${slotIndex}`).classList.add('active');
-
-    // Disable input
-    document.getElementById(`name-${slotIndex}`).disabled = true;
-    document.querySelector(`#slot-${slotIndex} .slot-button`).disabled = true;
-  } catch (e) {
-    alert('Error adding player: ' + e.message);
+    nameEl.disabled = true;
+  } catch {
+    const st = document.getElementById(`status-${slotIndex}`);
+    st.textContent = 'Demo mode'; st.style.color = 'var(--yellow)';
+    document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
+    document.getElementById(`invoiceText-${slotIndex}`).textContent = '⚡ No Fiber node — payment skipped';
+    document.getElementById(`slot-${slotIndex}`).classList.add('active');
+    nameEl.disabled = true; btn.textContent = 'ADDED';
+    try { await window.fiberquest.tournament.markPaid(currentTournament.id, `player-${slotIndex}`); } catch {}
   }
 }
 
-function copyInvoice(slotIndex) {
-  const text = document.getElementById(`invoiceText-${slotIndex}`).textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    alert('Invoice copied!');
-  });
+function copyInvoice(i) {
+  navigator.clipboard.writeText(document.getElementById(`invoiceText-${i}`).textContent);
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// ── View 3: Live ──────────────────────────────────────────
+function showLive(ev) {
+  const t    = currentTournament;
+  const game = gamesList.find(g => g.id === t.gameId);
+  const mode = game?.tournament_modes?.find(m => m.id === t.modeId);
+  document.getElementById('gameNameLive').textContent = game?.name || t.game || 'Game';
+  document.getElementById('modeLive').textContent     = mode?.name || t.mode || 'Tournament';
+  const players = ev?.players || t.players || [];
+  if (players[0]) document.getElementById('p1NameLive').textContent = players[0].name;
+  if (players[1]) document.getElementById('p2NameLive').textContent = players[1].name;
 
-// View 3: Live
-async function showLive() {
-  const t = currentTournament;
-  const game = gamesList.find(g => g.id === t.game);
-  const mode = game?.tournament_modes?.find(m => m.id === t.mode);
-
-  document.getElementById('gameNameLive').textContent = game?.name || 'Game';
-  document.getElementById('modeLive').textContent = mode?.name || 'Tournament';
-
-  // Initialize health bars from player list
-  if (t.players && t.players[0]) {
-    document.getElementById('p1NameLive').textContent = t.players[0].name;
-  }
-  if (t.players && t.players[1]) {
-    document.getElementById('p2NameLive').textContent = t.players[1].name;
-  }
-
-  // Start timer
   let elapsed = 0;
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     elapsed++;
-    const min = Math.floor(elapsed / 60);
-    const sec = (elapsed % 60).toString().padStart(2, '0');
-    document.getElementById('timerValue').textContent = `${min}:${sec}`;
+    document.getElementById('timerValue').textContent =
+      `${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}`;
   }, 1000);
-
   showView('view-live');
 }
 
 async function endTournament() {
   if (!confirm('End this tournament?')) return;
-  try {
-    await window.fiberquest.tournament.end(currentTournament.id);
-    if (timerInterval) clearInterval(timerInterval);
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
+  try { await window.fiberquest.tournament.end(currentTournament.id); if (timerInterval) clearInterval(timerInterval); }
+  catch (e) { alert('Error: ' + e.message); }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-
-// View 4: Results
+// ── View 4: Results ───────────────────────────────────────
 function showResults(event) {
-  const { winner, board } = event;
-
-  document.getElementById('winnerName').textContent = (winner?.name || 'Unknown') + '!';
-
-  // Scoreboard
-  const rows = (board || []).map((entry, idx) => {
-    const rank = idx + 1;
-    const name = entry.name || `Player ${idx + 1}`;
-    const score = entry.score || 0;
-    const payout = entry.payout ? entry.payout.toFixed(2) : '0.00';
-    return `
-      <div class="score-row">
-        <div class="score-rank">#${rank}</div>
-        <div class="score-name">${name}</div>
-        <div class="score-value">${score}</div>
-        <div class="score-payout">${payout} CKB</div>
-      </div>
-    `;
-  }).join('');
-
-  document.getElementById('scoreboardContent').innerHTML = rows || '<div style="color:var(--muted)">No scores</div>';
+  document.getElementById('winnerName').textContent = (event.winner?.name || 'Unknown') + '!';
+  const rows = (event.board || []).map((e, i) => `
+    <div class="score-row">
+      <div class="score-rank">#${i+1}</div>
+      <div class="score-name">${e.name || `Player ${i+1}`}</div>
+      <div class="score-value">${e.score || 0}</div>
+      <div class="score-payout">${e.payout ? e.payout.toFixed(2) : '0.00'} ${currentTournament?.currency || 'CKB'}</div>
+    </div>`).join('');
+  document.getElementById('scoreboardContent').innerHTML = rows || '<div style="color:var(--muted);padding:1rem;text-align:center">No scores</div>';
+  if (timerInterval) clearInterval(timerInterval);
   showView('view-results');
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// ── View 5: Settings ──────────────────────────────────────
+function applyConfigToForm(cfg) {
+  const ids = ['fiberRpcUrl','retroarchHost','retroarchUdp','gameServerPort',
+               'defaultEntryFee','defaultPlayers','defaultTimeLimit','defaultCurrency'];
+  ids.forEach(k => {
+    const el = document.getElementById('cfg-' + k);
+    if (el && cfg[k] !== undefined) el.value = cfg[k];
+  });
+}
 
-// Tournament events
-function handleTournamentEvent(event) {
-  console.log('[UI] Tournament event:', event.event, event);
+async function saveSettings() {
+  const g = (id, type) => { const v = document.getElementById('cfg-'+id)?.value; return type === 'int' ? (parseInt(v)||0) : v; };
+  const updates = {
+    fiberRpcUrl: g('fiberRpcUrl'), retroarchHost: g('retroarchHost'),
+    retroarchUdp: g('retroarchUdp','int'), gameServerPort: g('gameServerPort','int'),
+    defaultEntryFee: g('defaultEntryFee','int'), defaultPlayers: g('defaultPlayers','int'),
+    defaultTimeLimit: g('defaultTimeLimit','int'), defaultCurrency: g('defaultCurrency'),
+  };
+  try {
+    await window.fiberquest.config.save(updates);
+    applyDefaultsToSetup(updates);
+    checkServices();
+    flash('saveMsg', '✅ SAVED');
+  } catch (e) { flash('saveMsg', '❌ ' + e.message); }
+}
 
-  switch (event.event) {
-    case 'started':
-      console.log('Tournament started!');
-      showLive();
+async function resetSettings() {
+  try { const d = await window.fiberquest.config.defaults(); applyConfigToForm(d); flash('saveMsg', 'Reset to defaults — click SAVE to apply'); }
+  catch {}
+}
+
+function flash(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+// ── Tournament events ─────────────────────────────────────
+function handleTournamentEvent(ev) {
+  switch (ev.event) {
+    case 'started': showLive(ev); break;
+    case 'player_paid': {
+      // Find slot by playerId and mark as PAID
+      const players = currentTournament?.players || [];
+      const idx = players.findIndex(p => p.id === ev.playerId);
+      const slotIdx = idx >= 0 ? idx : parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const st = document.getElementById(`status-${slotIdx}`);
+      if (st) { st.textContent = '✅ PAID'; st.style.color = 'var(--green)'; }
+      // Update waiting status
+      const paid = (currentTournament?.players || []).filter(p => p.paid).length + 1;
+      const need = currentTournament?.maxPlayers || 2;
+      const ws = document.getElementById('waitStatus');
+      if (ws) ws.textContent = paid >= need ? 'All paid — starting...' : `${paid}/${need} paid, waiting...`;
       break;
-
+    }
     case 'scores':
-      if (event.scores && event.scores.length >= 2) {
-        const s1 = event.scores[0];
-        const s2 = event.scores[1];
-
-        // Update health bars (simple: map score to health %)
-        const h1 = Math.min(100, (s1.score || 0));
-        const h2 = Math.min(100, (s2.score || 0));
-
-        document.getElementById('p1Health').style.width = h1 + '%';
-        document.getElementById('p1Health').textContent = h1 + '%';
-        document.getElementById('p2Health').style.width = h2 + '%';
-        document.getElementById('p2Health').textContent = h2 + '%';
+      if (ev.scores?.length >= 2) {
+        const h = (s) => Math.min(100, s?.pct ?? 0);
+        ['p1','p2'].forEach((p,i) => {
+          document.getElementById(p+'Health').style.width = h(ev.scores[i]) + '%';
+          document.getElementById(p+'Health').textContent = h(ev.scores[i]) + '%';
+        });
       }
       break;
-
-    case 'player_paid':
-      // Update the slot status
-      console.log('Player paid:', event.name);
-      updateWaitingStatus();
-      break;
-
-    case 'complete':
-      showResults(event);
-      break;
-
-    case 'error':
-      console.error('Tournament error:', event.message);
-      alert('Tournament error: ' + event.message);
-      break;
+    case 'complete': showResults(ev); break;
+    case 'error': console.error('Tournament error:', ev.message); break;
   }
 }
 
-function updateWaitingStatus() {
-  // Could fetch status and update UI, but for now just show a simple message
-  const statEl = document.getElementById('waitStatus');
-  if (statEl) {
-    statEl.textContent = 'Players joining...';
+// ── Update ticker ─────────────────────────────────────────
+function _ubSet(text, state) {
+  const bar    = document.getElementById('update-bar');
+  const badge  = document.getElementById('ub-badge');
+  const ticker = document.getElementById('ub-ticker');
+  const t1     = document.getElementById('ub-text');
+  const t2     = document.getElementById('ub-text-2');
+  const prog   = document.getElementById('ub-progress');
+  const btn    = document.getElementById('ub-restart');
+
+  t1.textContent = text;
+  t2.textContent = text;
+  ticker.className = 'ub-ticker ' + (state || '');
+  badge.className  = 'ub-badge '  + (state || '');
+
+  if (state === 'downloading') {
+    badge.textContent  = 'DOWNLOADING';
+    prog.style.display = 'block';
+    btn.style.display  = 'none';
+  } else if (state === 'ready') {
+    badge.textContent  = 'READY';
+    prog.style.display = 'none';
+    btn.style.display  = 'block';
+  } else {
+    badge.textContent  = 'UPDATE';
+    prog.style.display = 'none';
+    btn.style.display  = 'none';
   }
+  bar.classList.add('visible');
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-
-// Boot
-if (window.fiberquest) {
-  init();
-} else {
-  alert('FiberQuest API not available - running in browser mode');
+function updateDismiss() {
+  document.getElementById('update-bar').classList.remove('visible');
 }
+function updateInstall() {
+  window.fiberquest.updater.install();
+}
+
+function initUpdater() {
+  if (!window.fiberquest.updater) return;
+  window.fiberquest.updater.onEvent(ev => {
+    if (ev.event === 'available') {
+      _ubSet(`⬆ NEW VERSION ${ev.version} AVAILABLE — DOWNLOADING IN BACKGROUND  ·  `, '');
+    } else if (ev.event === 'progress') {
+      _ubSet(`⬆ DOWNLOADING ${ev.percent}%  `, 'downloading');
+      const fill = document.getElementById('ub-fill');
+      if (fill) fill.style.width = ev.percent + '%';
+    } else if (ev.event === 'ready') {
+      _ubSet(`⬆ VERSION ${ev.version} READY  ·  RESTART TO INSTALL  ·  `, 'ready');
+    }
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────
+if (window.fiberquest) { init(); initUpdater(); }
+else console.error('FiberQuest API not available');
 </script>
 
 </body>

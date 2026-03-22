@@ -300,7 +300,7 @@ class Tournament extends EventEmitter {
     }
 
     // Emit score update
-    this.emit('scores', this._getScoreBoard());
+    this.emit('scores', { scores: this._getScoreBoard(), scoreMax: this.mode?.score_max || 100 });
   }
 
   _updateScores(ramState) {
@@ -336,11 +336,13 @@ class Tournament extends EventEmitter {
   }
 
   _getScoreBoard() {
+    const scoreMax = this.mode?.score_max || 100;
     return Object.entries(this.scores)
       .map(([id, score]) => ({
         playerId: id,
         name: this.players[id]?.name || id,
         score,
+        pct: Math.round(Math.min(100, (score / scoreMax) * 100)),
         paid: this.players[id]?.paid,
       }))
       .sort((a, b) => b.score - a.score);
@@ -478,9 +480,12 @@ class Tournament extends EventEmitter {
     return {
       id:         this.id,
       state:      this.state,
+      gameId:     this.gameId,
+      modeId:     this.modeId,
       game:       this.gameDef?.name,
       mode:       this.mode?.name,
       entryFee:   this.entryFee,
+      maxPlayers: this.maxPlayers,
       players:    Object.entries(this.players).map(([id, p]) => ({
                     id, name: p.name, paid: p.paid, score: p.score
                   })),

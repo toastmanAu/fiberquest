@@ -7,19 +7,66 @@
 
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const fs   = require('fs');
 const { Worker } = require('worker_threads');
 const GameServer = require('./game-server');
 const FiberClient = require('./fiber-client');
 const { TournamentManager } = require('./tournament-manager');
 
+// electron-updater — no-ops gracefully in dev/unpackaged mode
+let autoUpdater;
+try {
+  ({ autoUpdater } = require('electron-updater'));
+  autoUpdater.autoDownload        = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = null; // suppress verbose log; we push events to UI
+} catch (_) {
+  autoUpdater = null;
+}
+
 // ── Config ─────────────────────────────────────────────────────────────────
 
-const CONFIG = {
-  fiberRpcUrl:    process.env.FIBER_RPC_URL    || 'http://127.0.0.1:8227',
-  gameServerPort: parseInt(process.env.GAME_PORT || '8765'),
-  retroarchUdp:   parseInt(process.env.RA_PORT   || '55355'),
-  devMode:        process.env.NODE_ENV === 'development',
+const CONFIG_DEFAULTS = {
+  fiberRpcUrl:       'http://127.0.0.1:8227',
+  gameServerPort:    8765,
+  retroarchHost:     '192.168.68.84',
+  retroarchUdp:      55355,
+  defaultEntryFee:   100,
+  defaultPlayers:    2,
+  defaultTimeLimit:  10,
+  defaultCurrency:   'Fibt',
+  devMode:           false,
+  retroarchBin:      'retroarch',
+  romsDir:           '',
 };
+
+function getConfigPath() {
+  return path.join(app.getPath('userData'), 'fiberquest-config.json');
+}
+
+function loadConfig() {
+  try {
+    const raw = fs.readFileSync(getConfigPath(), 'utf8');
+    return { ...CONFIG_DEFAULTS, ...JSON.parse(raw) };
+  } catch (_) {
+    return { ...CONFIG_DEFAULTS };
+  }
+}
+
+function saveConfig(updates) {
+  const current = loadConfig();
+  const next = { ...current, ...updates };
+  fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2));
+  // Apply live to CONFIG
+  Object.assign(CONFIG, next);
+  // Reconnect fiber client if URL changed
+  if (updates.fiberRpcUrl && fiberClient) {
+    fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode });
+  }
+  return next;
+}
+
+const CONFIG = loadConfig();
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -87,10 +134,133 @@ function setupIPC() {
   ipcMain.handle('game:status', async () => ({
     port: CONFIG.gameServerPort,
     running: !!gameServer,
+    clients: gameServer ? gameServer.clientCount : 0,
   }));
 
+  // RetroArch UDP ping
+  ipcMain.handle('retroarch:ping', async () => {
+    const dgram = require('dgram');
+    return new Promise((resolve) => {
+      const sock = dgram.createSocket('udp4');
+      let done = false;
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        try { sock.close(); } catch (_) {}
+        resolve(result);
+      };
+      sock.on('message', (msg) => {
+        finish({ ok: true, response: msg.toString().trim() });
+      });
+      sock.on('error', () => finish({ ok: false }));
+      setTimeout(() => finish({ ok: false, reason: 'timeout' }), 1500);
+      const cmd = Buffer.from('GET_STATUS\n');
+      sock.send(cmd, CONFIG.retroarchUdp, CONFIG.retroarchHost, (err) => {
+        if (err) finish({ ok: false, reason: err.message });
+      });
+    });
+  });
+
+  // Fiber channel summary (for status bar)
+  ipcMain.handle('fiber:channelSummary', async () => {
+    try {
+      const channels = await fiberClient.listChannels();
+      const list = channels?.channels || channels || [];
+      const ready = list.filter(c =>
+        c.state === 'CHANNEL_READY' ||
+        c.status === 'CHANNEL_READY' ||
+        c.state?.state_name === 'CHANNEL_READY'
+      ).length;
+      return { ok: true, total: list.length, ready };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
   // Config
-  ipcMain.handle('config:get', () => CONFIG);
+  ipcMain.handle('config:get', () => ({ ...CONFIG }));
+  ipcMain.handle('config:save', (_, updates) => saveConfig(updates));
+  ipcMain.handle('config:defaults', () => ({ ...CONFIG_DEFAULTS }));
+
+  // RetroArch check / first-run setup
+  ipcMain.handle('retroarch:check', async () => {
+    const { execSync } = require('child_process');
+    const bin = CONFIG.retroarchBin || 'retroarch';
+    try {
+      const p = execSync(`which ${bin}`, { encoding: 'utf8' }).trim();
+      return { found: true, path: p };
+    } catch (_) {
+      return { found: false };
+    }
+  });
+
+  ipcMain.handle('retroarch:install', async (_, method) => {
+    const { exec } = require('child_process');
+    const cmds = {
+      snap: 'snap install retroarch',
+      apt:  'pkexec apt-get install -y retroarch',
+      flatpak: 'flatpak install -y flathub org.libretro.RetroArch',
+    };
+    const cmd = cmds[method];
+    if (!cmd) return { ok: false, reason: 'Unknown method: ' + method };
+    return new Promise((resolve) => {
+      exec(cmd, { timeout: 120000 }, (err, stdout, stderr) => {
+        if (err) { resolve({ ok: false, reason: stderr || err.message }); }
+        else      { resolve({ ok: true }); }
+      });
+    });
+  });
+
+  ipcMain.handle('retroarch:pickRomsDir', async () => {
+    const { dialog } = require('electron');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select ROMs Directory',
+      properties: ['openDirectory'],
+      buttonLabel: 'Select ROMs Folder',
+    });
+    if (result.canceled || !result.filePaths.length) return { canceled: true };
+    const romsDir = result.filePaths[0];
+    saveConfig({ romsDir });
+    return { canceled: false, romsDir };
+  });
+
+  // RetroArch launch (only when RetroArch is local)
+  ipcMain.handle('retroarch:isLocal', () => {
+    const h = CONFIG.retroarchHost;
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+  });
+
+  ipcMain.handle('retroarch:launch', async (_, gameId) => {
+    const h = CONFIG.retroarchHost;
+    const isLocal = h === 'localhost' || h === '127.0.0.1' || h === '::1';
+    if (!isLocal) return { ok: false, reason: 'RetroArch is not on this machine' };
+
+    const gamesDir = path.join(__dirname, '../games');
+    let game;
+    try {
+      const file = path.join(gamesDir, `${gameId}.json`);
+      game = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (_) {
+      return { ok: false, reason: `Game not found: ${gameId}` };
+    }
+
+    const { spawn } = require('child_process');
+    const romPath = CONFIG.romsDir
+      ? path.join(CONFIG.romsDir, game.rom_name)
+      : game.rom_name;
+    const args = ['-L', game.core, romPath, '--fullscreen'];
+
+    try {
+      const child = spawn(CONFIG.retroarchBin, args, {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: e.message };
+    }
+  });
 }
 
 // ── Tournament IPC handlers ────────────────────────────────────────────────
@@ -191,7 +361,39 @@ app.whenReady().then(async () => {
 
   // Wire tournament events to Electron window (after createWindow)
   _wireTournamentToRenderer(tournamentManager);
+
+  // Auto-updater (runs after window so update events can reach renderer)
+  setupUpdater();
 });
+
+// ── Auto-updater ───────────────────────────────────────────────────────────
+
+function setupUpdater() {
+  if (!autoUpdater) return;
+
+  const push = (event, data) => {
+    if (mainWindow) mainWindow.webContents.send('update:event', { event, ...data });
+  };
+
+  autoUpdater.on('update-available',  info     => push('available',  { version: info.version, releaseDate: info.releaseDate }));
+  autoUpdater.on('download-progress', progress => push('progress',   { percent: Math.round(progress.percent), bytesPerSecond: progress.bytesPerSecond }));
+  autoUpdater.on('update-downloaded', info     => push('ready',      { version: info.version }));
+  autoUpdater.on('error',             err      => console.warn('[Updater]', err.message));
+
+  ipcMain.handle('update:install', () => {
+    if (autoUpdater) { setImmediate(() => autoUpdater.quitAndInstall(false, true)); }
+  });
+  ipcMain.handle('update:check', async () => {
+    if (!autoUpdater) return { available: false };
+    try { await autoUpdater.checkForUpdates(); return { ok: true }; }
+    catch (e) { return { ok: false, reason: e.message }; }
+  });
+
+  // Check 8 seconds after launch so we don't slow startup
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(e => console.warn('[Updater] check failed:', e.message));
+  }, 8000);
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

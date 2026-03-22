@@ -1,0 +1,6 @@
+#!/bin/bash
+# Post-install script for FiberQuest .deb package
+# Registers the .desktop entry and updates icon cache
+
+update-desktop-database /usr/share/applications 2>/dev/null || true
+gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true

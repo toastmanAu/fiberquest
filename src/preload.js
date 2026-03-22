@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('fiberquest', {
   game: {
     status: () => ipcRenderer.invoke('game:status'),
   },
+  // Service health checks
+  health: {
+    retroarch:      () => ipcRenderer.invoke('retroarch:ping'),
+    channelSummary: () => ipcRenderer.invoke('fiber:channelSummary'),
+  },
   // Tournament
   tournament: {
     create:    (opts)          => ipcRenderer.invoke('tournament:create', opts),
@@ -33,6 +38,24 @@ contextBridge.exposeInMainWorld('fiberquest', {
   games: {
     list: () => ipcRenderer.invoke('games:list'),
   },
+  // RetroArch
+  retroarch: {
+    isLocal:     ()       => ipcRenderer.invoke('retroarch:isLocal'),
+    check:       ()       => ipcRenderer.invoke('retroarch:check'),
+    install:     (method) => ipcRenderer.invoke('retroarch:install', method),
+    pickRomsDir: ()       => ipcRenderer.invoke('retroarch:pickRomsDir'),
+    launch:      (gameId) => ipcRenderer.invoke('retroarch:launch', gameId),
+  },
+  // Auto-updater
+  updater: {
+    check:    ()   => ipcRenderer.invoke('update:check'),
+    install:  ()   => ipcRenderer.invoke('update:install'),
+    onEvent:  (cb) => ipcRenderer.on('update:event', (_, data) => cb(data)),
+  },
   // Config
-  config: () => ipcRenderer.invoke('config:get'),
+  config: {
+    get:      ()        => ipcRenderer.invoke('config:get'),
+    save:     (updates) => ipcRenderer.invoke('config:save', updates),
+    defaults: ()        => ipcRenderer.invoke('config:defaults'),
+  },
 });

@@ -30,6 +30,8 @@
       "name": "Best of 3 Rounds",
       "description": "First player to win 2 rounds wins. Track HP — player at 0 loses round.",
       "tracked_fields": ["p1_health", "p2_health"],
+      "tracked_field": "health",
+      "score_max": 161,
       "win_condition": "opponent_at_zero",
       "time_limit_minutes": 10
     }
