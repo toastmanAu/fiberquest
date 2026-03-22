@@ -11,6 +11,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build (${{ matrix.arch }})
@@ -21,9 +24,11 @@ jobs:
         include:
           - arch: x64
             runner: ubuntu-latest
+            targets: AppImage deb
             build_flag: --x64
           - arch: arm64
             runner: ubuntu-24.04-arm
+            targets: AppImage
             build_flag: --arm64
 
     steps:
@@ -39,7 +44,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # AppImage needs libfuse2 on Ubuntu 22+
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
@@ -49,11 +53,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          PUBLISH="never"
           if [[ "${{ github.event_name }}" == "push" ]] || [[ "${{ inputs.publish }}" == "true" ]]; then
-            npx electron-builder --linux ${{ matrix.build_flag }} --publish always
-          else
-            npx electron-builder --linux ${{ matrix.build_flag }} --publish never
+            PUBLISH="always"
           fi
+          npx electron-builder --linux ${{ matrix.targets }} ${{ matrix.build_flag }} --publish $PUBLISH
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
