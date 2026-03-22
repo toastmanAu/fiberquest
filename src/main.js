@@ -29,7 +29,7 @@ try {
 const CONFIG_DEFAULTS = {
   fiberRpcUrl:       'http://127.0.0.1:8227',
   gameServerPort:    8765,
-  retroarchHost:     '192.168.68.84',
+  retroarchHost:     '127.0.0.1',
   retroarchUdp:      55355,
   defaultEntryFee:   100,
   defaultPlayers:    2,
