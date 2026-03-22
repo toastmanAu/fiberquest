@@ -37,10 +37,7 @@
       "!**/scripts/**"
     ],
     "linux": {
-      "target": [
-        { "target": "AppImage", "arch": ["x64", "arm64"] },
-        { "target": "deb",      "arch": ["x64", "arm64"] }
-      ],
+      "target": ["AppImage", "deb"],
       "category": "Game",
       "synopsis": "Retro gaming tournament platform with Fiber Network micropayments",
       "description": "Host and play retro gaming tournaments with real micropayment entry fees and automatic prize payouts via the Fiber Network (CKB Layer 2)."
@@ -49,9 +46,6 @@
       "provider": "github",
       "owner": "toastmanAu",
       "repo": "fiberquest"
-    },
-    "appImage": {
-      "license": "MIT"
     },
     "deb": {
       "depends": [],
