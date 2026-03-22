@@ -35,13 +35,13 @@ esac
 header "FiberQuest Installer"
 info "Architecture: ${ARCH} → ${APPIMAGE_ARCH}"
 
-# Resolve latest version from GitHub redirect
+# Resolve latest version via GitHub API (works for pre-releases too)
 info "Resolving latest release..."
-LATEST_URL=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "${RELEASES_BASE}/latest" 2>/dev/null)
-APP_VERSION="${LATEST_URL##*/v}"
-if [[ -z "$APP_VERSION" || "$APP_VERSION" == "$LATEST_URL" ]]; then
+API_URL="https://api.github.com/repos/${GITHUB_REPO}/releases"
+APP_VERSION=$(curl -fsSL "$API_URL" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name":[[:space:]]*"v\([^"]*\)".*/\1/')
+if [[ -z "$APP_VERSION" ]]; then
   err "Could not resolve latest version from GitHub."
-  err "Check: ${RELEASES_BASE}/latest"
+  err "Check: https://github.com/${GITHUB_REPO}/releases"
   exit 1
 fi
 ok "Latest version: ${APP_VERSION}"
