@@ -83,8 +83,10 @@ else
   warn "libfuse2 not found — required for AppImage"
   if command -v apt-get &>/dev/null; then
     info "Installing libfuse2..."
-    sudo apt-get install -y libfuse2 && ok "libfuse2 installed" || {
-      err "Failed to install libfuse2. Try manually: sudo apt install libfuse2"
+    # Ubuntu 24.04+ renamed libfuse2 → libfuse2t64; try both
+    sudo apt-get install -y libfuse2t64 2>/dev/null || sudo apt-get install -y libfuse2
+    check_fuse && ok "libfuse2 installed" || {
+      err "Failed to install libfuse2. Try manually: sudo apt install libfuse2t64"
       exit 1
     }
   elif command -v dnf &>/dev/null; then
