@@ -120,14 +120,23 @@ else
 fi
 chmod +x "${DEST}.AppImage"
 
-# Wrapper script — adds --no-sandbox for Pi/ARM compatibility (Chromium sandbox
-# requires unprivileged user namespaces which are restricted on Pi OS by default)
-cat > "${DEST}" <<WRAPPER
-#!/usr/bin/env bash
-exec "${DEST}.AppImage" --no-sandbox "\$@"
-WRAPPER
+# Wrapper script — adds --no-sandbox for Pi/ARM compatibility
+# (use printf, not heredoc — heredocs break when script is run via curl | bash)
+printf '#!/usr/bin/env bash\nexec "%s.AppImage" --no-sandbox "$@"\n' "${DEST}" > "${DEST}"
 chmod +x "${DEST}"
 ok "Installed to ${DEST}.AppImage"
+
+# ── Icon ───────────────────────────────────────────────────
+header "Installing icon..."
+ICON_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
+mkdir -p "$ICON_DIR"
+ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/build/icon.png"
+if curl -fsSL "$ICON_URL" -o "${ICON_DIR}/fiberquest.png" 2>/dev/null; then
+  ok "Icon installed"
+  gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+else
+  warn "Could not download icon (non-fatal)"
+fi
 
 # ── Desktop entry ──────────────────────────────────────────
 if [[ $APPIMAGE_ONLY -eq 0 ]]; then
@@ -138,7 +147,7 @@ if [[ $APPIMAGE_ONLY -eq 0 ]]; then
 Name=FiberQuest
 Comment=Retro gaming tournament platform with Fiber Network micropayments
 Exec=${DEST}
-Icon=fiberquest
+Icon=${ICON_DIR}/fiberquest.png
 Terminal=false
 Type=Application
 Categories=Game;
