@@ -52,6 +52,8 @@ jobs:
       - name: Build & publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_DRAFT: false
+          EP_PRE_RELEASE: false
         run: |
           PUBLISH="never"
           if [[ "${{ github.event_name }}" == "push" ]] || [[ "${{ inputs.publish }}" == "true" ]]; then
