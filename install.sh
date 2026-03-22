@@ -46,7 +46,13 @@ if [[ -z "$APP_VERSION" ]]; then
 fi
 ok "Latest version: ${APP_VERSION}"
 
-APPIMAGE_FILE="FiberQuest-${APP_VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
+# electron-builder names: arm64 → ProductName-version-arm64.AppImage
+#                          x64  → ProductName-version.AppImage (no arch suffix)
+if [[ "$APPIMAGE_ARCH" == "arm64" ]]; then
+  APPIMAGE_FILE="FiberQuest-${APP_VERSION}-arm64.AppImage"
+else
+  APPIMAGE_FILE="FiberQuest-${APP_VERSION}.AppImage"
+fi
 APPIMAGE_URL="${RELEASES_BASE}/download/v${APP_VERSION}/${APPIMAGE_FILE}"
 
 # ── Parse args ─────────────────────────────────────────────
