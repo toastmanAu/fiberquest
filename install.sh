@@ -120,8 +120,13 @@ else
 fi
 chmod +x "${DEST}.AppImage"
 
-# Symlink without extension for convenience
-ln -sf "${DEST}.AppImage" "${DEST}" 2>/dev/null || true
+# Wrapper script — adds --no-sandbox for Pi/ARM compatibility (Chromium sandbox
+# requires unprivileged user namespaces which are restricted on Pi OS by default)
+cat > "${DEST}" <<WRAPPER
+#!/usr/bin/env bash
+exec "${DEST}.AppImage" --no-sandbox "\$@"
+WRAPPER
+chmod +x "${DEST}"
 ok "Installed to ${DEST}.AppImage"
 
 # ── Desktop entry ──────────────────────────────────────────
@@ -132,7 +137,7 @@ if [[ $APPIMAGE_ONLY -eq 0 ]]; then
 [Desktop Entry]
 Name=FiberQuest
 Comment=Retro gaming tournament platform with Fiber Network micropayments
-Exec=${DEST}.AppImage
+Exec=${DEST}
 Icon=fiberquest
 Terminal=false
 Type=Application

@@ -42,6 +42,7 @@
     ],
     "linux": {
       "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
       "category": "Game",
       "synopsis": "Retro gaming tournament platform with Fiber Network micropayments",
       "description": "Host and play retro gaming tournaments with real micropayment entry fees and automatic prize payouts via the Fiber Network (CKB Layer 2)."
