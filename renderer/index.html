@@ -1353,9 +1353,7 @@ async function startSetup() {
     alert('⚠️  No payment service available.\n\nEither connect your Fiber node (SSH tunnel) or configure an agent key in Settings to accept L1 JoyID payments.');
     return;
   }
-  if (!retroOk) {
-    if (!confirm('⚠️  RetroArch is offline — scores won\'t be tracked automatically.\n\nContinue anyway?')) return;
-  }
+
   const opts = {
     gameId:               document.getElementById('gameSelect').value,
     mode:                 document.getElementById('modeSelect').value,
@@ -1368,6 +1366,7 @@ async function startSetup() {
   };
   try {
     currentTournament = await window.fiberquest.tournament.create(opts);
+    await runPreControllerAssignment(opts.players);
     showWaitingRoom();
   } catch (e) { alert('Error creating tournament: ' + e.message); }
 }
@@ -1376,65 +1375,92 @@ async function startSetup() {
 function showWaitingRoom() {
   const t = currentTournament;
   const n = t.maxPlayers || 2;
-  document.getElementById('tourId').textContent    = `ID: ${t.id}`;
+  document.getElementById('tourId').textContent     = `ID: ${t.id}`;
   document.getElementById('waitStatus').textContent = `Waiting for ${n} players...`;
   document.getElementById('playerSlots').innerHTML  = Array(n).fill(null).map((_, i) => `
     <div class="player-slot" id="slot-${i}">
-      <input type="text" class="slot-input" id="name-${i}" placeholder="Player ${i+1}">
-      <button class="slot-button" onclick="addPlayer(${i})">ADD PLAYER</button>
+      <div id="step-name-${i}">
+        <input type="text" class="slot-input" id="name-${i}" placeholder="Player ${i+1} name">
+        <button class="slot-button" onclick="addPlayerName(${i})">ADD PLAYER</button>
+      </div>
+      <div id="step-addr-${i}" style="display:none">
+        <input type="text" class="slot-input" id="addr-${i}" placeholder="CKB address (ckt1…)" style="font-size:var(--fs-xs);font-family:monospace">
+        <button class="slot-button" onclick="buildPlayerTx(${i})">BUILD TX →</button>
+      </div>
       <div class="slot-status" id="status-${i}">Waiting...</div>
       <div class="invoice-box" id="invoice-${i}" style="display:none">
+        <div style="font-size:var(--fs-xs);color:var(--yellow);margin-bottom:var(--sp-xs)">SCAN TO SIGN &amp; PAY</div>
         <img class="invoice-qr" id="invoiceQr-${i}" src="" alt="QR" style="display:none">
         <div class="invoice-text" id="invoiceText-${i}"></div>
-        <button class="invoice-copy" onclick="copyInvoice(${i})">📋 COPY</button>
+        <button class="invoice-copy" onclick="copyInvoice(${i})">COPY URL</button>
       </div>
     </div>`).join('');
   showView('view-waiting');
 }
 
-async function addPlayer(slotIndex) {  // eslint-disable-line no-unused-vars
+// Step 1: register player name, get slot index
+async function addPlayerName(slotIndex) {  // eslint-disable-line no-unused-vars
   const nameEl = document.getElementById(`name-${slotIndex}`);
   const name   = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
 
-  const btn = document.querySelector(`#slot-${slotIndex} .slot-button`);
+  const btn = document.querySelector(`#step-name-${slotIndex} .slot-button`);
   btn.textContent = 'ADDING...'; btn.disabled = true;
 
   try {
-    const result = await window.fiberquest.tournament.addPlayer(currentTournament.id, `player-${slotIndex}`, name);
-    const uri = result.joyidUri || result.entryInvoice || '(invoice)';
-    const isJoyID = uri.startsWith('nervos:');
-    document.getElementById(`status-${slotIndex}`).textContent = isJoyID
-      ? 'Scan with JoyID to pay entry'
-      : 'Scan invoice to pay entry';
+    const result = await window.fiberquest.tournament.addPlayer(
+      currentTournament.id, `player-${slotIndex}`, name
+    );
+    if (!currentTournament.players) currentTournament.players = [];
+    if (!currentTournament.players.find(p => p.id === result.playerId)) {
+      currentTournament.players.push({ id: result.playerId, name, paid: false });
+    }
+    nameEl.disabled = true;
+    btn.textContent = 'ADDED';
+    document.getElementById(`status-${slotIndex}`).textContent = 'Enter CKB address to pay';
+    document.getElementById(`step-addr-${slotIndex}`).style.display = 'block';
+    document.getElementById(`addr-${slotIndex}`).focus();
+    document.getElementById(`slot-${slotIndex}`).classList.add('active');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'ADD PLAYER';
+    document.getElementById(`status-${slotIndex}`).textContent = 'Error: ' + e.message;
+  }
+}
+
+// Step 2: given address, build the raw tx and show JoyID sign QR
+async function buildPlayerTx(slotIndex) {  // eslint-disable-line no-unused-vars
+  const addrEl = document.getElementById(`addr-${slotIndex}`);
+  const addr   = addrEl.value.trim();
+  if (!addr || !addr.startsWith('ck')) { addrEl.focus(); return; }
+
+  const btn = document.querySelector(`#step-addr-${slotIndex} .slot-button`);
+  btn.textContent = 'BUILDING...'; btn.disabled = true;
+
+  try {
+    const result = await window.fiberquest.tournament.buildPayTx(
+      currentTournament.id, `player-${slotIndex}`, addr
+    );
+    addrEl.disabled = true;
+    document.getElementById(`status-${slotIndex}`).textContent = 'Scan QR in JoyID to sign & pay';
     document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
+
     const invEl = document.getElementById(`invoiceText-${slotIndex}`);
-    invEl.textContent = uri;
-    invEl.dataset.full = uri;
-    // Generate QR code — hide raw text once QR loads
+    invEl.textContent = result.signUrl;
+    invEl.dataset.full = result.signUrl;
+
     try {
-      const qrDataUrl = await window.fiberquest.qr.generate(uri);
+      const qrDataUrl = await window.fiberquest.qr.generate(result.signUrl);
       const qrEl  = document.getElementById(`invoiceQr-${slotIndex}`);
       const txtEl = document.getElementById(`invoiceText-${slotIndex}`);
       qrEl.src = qrDataUrl;
       qrEl.style.display = 'block';
-      txtEl.style.display = 'none';  // QR replaces text — copy button still works via data-full
+      txtEl.style.display = 'none';
     } catch (e) {
       console.warn('QR generation failed:', e.message);
-      // Leave text visible as fallback
     }
-    document.getElementById(`slot-${slotIndex}`).classList.add('active');
-    nameEl.disabled = true;
-  } catch {
-    const st = document.getElementById(`status-${slotIndex}`);
-    st.textContent = 'Demo mode (no node)'; st.style.color = 'var(--yellow)';
-    document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
-    const demoEl = document.getElementById(`invoiceText-${slotIndex}`);
-    demoEl.textContent = '⚡ Payment skipped — demo mode';
-    demoEl.dataset.full = '';
-    document.getElementById(`slot-${slotIndex}`).classList.add('active');
-    nameEl.disabled = true; btn.textContent = 'ADDED';
-    try { await window.fiberquest.tournament.markPaid(currentTournament.id, `player-${slotIndex}`); } catch {}
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'BUILD TX →';
+    document.getElementById(`status-${slotIndex}`).textContent = 'Error: ' + e.message;
   }
 }
 
@@ -1533,35 +1559,32 @@ function flash(id, msg) {
 }
 
 // ── Controller assignment ──────────────────────────────────
-async function runControllerAssignment() {
-  const t = currentTournament;
-  if (!t) return;
-  const players = t.players || [];
+// pendingControllerMap: slot index → gamepad port, captured before payment
+let pendingControllerMap = null;
+
+async function runPreControllerAssignment(playerCount) {
   const modal = document.getElementById('controllerModal');
   const promptEl = document.getElementById('ctrlPromptName');
   const detectedEl = document.getElementById('ctrlDetected');
-  const controllerMap = {};
+  const slotMap = {};
   const usedPorts = new Set();
 
   modal.style.display = 'flex';
 
-  for (const player of players) {
-    promptEl.textContent = `${player.name.toUpperCase()}`;
+  for (let i = 0; i < playerCount; i++) {
+    promptEl.textContent = `PLAYER ${i + 1} — PRESS YOUR BUTTON`;
     detectedEl.textContent = '';
-    // Show in RetroArch OSD too
-    window.fiberquest.retroarch.showMsg(`${player.name} - press your controller button!`).catch(() => {});
 
     const port = await waitForUniqueButtonPress(usedPorts);
     usedPorts.add(port);
-    controllerMap[player.id] = port;
-    detectedEl.textContent = `✅ ${player.name} → Port ${port + 1}`;
-    window.fiberquest.retroarch.showMsg(`${player.name} confirmed on Port ${port + 1}`).catch(() => {});
-    await new Promise(r => setTimeout(r, 800)); // brief confirmation pause
+    slotMap[i] = port;
+    detectedEl.textContent = `✅ Player ${i + 1} → Controller ${port + 1}`;
+    await new Promise(r => setTimeout(r, 800));
   }
 
   modal.style.display = 'none';
-  await window.fiberquest.controllerMap.set(t.id, controllerMap);
-  console.log('[Controller] Map set:', controllerMap);
+  pendingControllerMap = slotMap;
+  console.log('[Controller] Pre-assigned:', slotMap);
 }
 
 function waitForUniqueButtonPress(excludePorts) {
@@ -1595,6 +1618,12 @@ function waitForUniqueButtonPress(excludePorts) {
 function handleTournamentEvent(ev) {
   switch (ev.event) {
     case 'started': showLive(ev); break;
+    case 'deposit_timeout': {
+      const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const st = document.getElementById(`status-${slotIdx}`);
+      if (st) { st.textContent = '⏱ TIMED OUT — rescan or re-enter address'; st.style.color = 'var(--red)'; }
+      break;
+    }
     case 'player_paid': {
       const players = currentTournament?.players || [];
       const idx = players.findIndex(p => p.id === ev.playerId);
@@ -1606,8 +1635,18 @@ function handleTournamentEvent(ev) {
       const paidCount = players.filter(p => p.paid).length;
       const need = currentTournament?.maxPlayers || 2;
       const ws = document.getElementById('waitStatus');
-      if (ws) ws.textContent = paidCount >= need ? 'All paid — assign controllers...' : `${paidCount}/${need} paid, waiting...`;
+      if (ws) ws.textContent = paidCount >= need ? 'All paid — starting...' : `${paidCount}/${need} paid, waiting...`;
       if (paidCount >= need) {
+        // Apply pre-captured controller map now that we have player IDs
+        if (pendingControllerMap) {
+          const idMap = {};
+          (currentTournament.players || []).forEach((p, i) => {
+            if (pendingControllerMap[i] !== undefined) idMap[p.id] = pendingControllerMap[i];
+          });
+          window.fiberquest.controllerMap.set(currentTournament.id, idMap)
+            .then(() => console.log('[Controller] Map applied:', idMap))
+            .catch(e => console.warn('[Controller] Map failed:', e.message));
+        }
         // Auto-launch RetroArch with the correct game
         window.fiberquest.retroarch.isLocal().then(isLocal => {
           if (isLocal && currentTournament?.gameId) {
@@ -1616,7 +1655,6 @@ function handleTournamentEvent(ev) {
               .catch(e => console.warn('[AutoLaunch]', e.message));
           }
         });
-        runControllerAssignment();
       }
       break;
     }

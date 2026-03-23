@@ -26,13 +26,14 @@ contextBridge.exposeInMainWorld('fiberquest', {
   },
   // Tournament
   tournament: {
-    create:    (opts)          => ipcRenderer.invoke('tournament:create', opts),
-    addPlayer: (tId, pId, name) => ipcRenderer.invoke('tournament:addPlayer', tId, pId, name),
-    markPaid:  (tId, pId)      => ipcRenderer.invoke('tournament:markPaid', tId, pId),
-    status:    (tId)           => ipcRenderer.invoke('tournament:status', tId),
-    end:       (tId)           => ipcRenderer.invoke('tournament:end', tId),
-    sendPayout: (tId, inv)     => ipcRenderer.invoke('tournament:sendPayout', tId, inv),
-    onEvent:   (cb)            => ipcRenderer.on('tournament:event', (_, data) => cb(data)),
+    create:       (opts)               => ipcRenderer.invoke('tournament:create', opts),
+    addPlayer:    (tId, pId, name)     => ipcRenderer.invoke('tournament:addPlayer', tId, pId, name),
+    buildPayTx:   (tId, pId, addr)     => ipcRenderer.invoke('tournament:buildPlayerPayTx', tId, pId, addr),
+    markPaid:     (tId, pId)           => ipcRenderer.invoke('tournament:markPaid', tId, pId),
+    status:       (tId)                => ipcRenderer.invoke('tournament:status', tId),
+    end:          (tId)                => ipcRenderer.invoke('tournament:end', tId),
+    sendPayout:   (tId, inv)           => ipcRenderer.invoke('tournament:sendPayout', tId, inv),
+    onEvent:      (cb)                 => ipcRenderer.on('tournament:event', (_, data) => cb(data)),
   },
   // Games
   games: {

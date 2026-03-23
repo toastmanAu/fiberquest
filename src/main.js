@@ -342,9 +342,10 @@ function setupIPC() {
   });
 
   ipcMain.handle('retroarch:launch', async (_, gameId) => {
+    console.log(`[Main] retroarch:launch called — gameId=${gameId}`);
     const h = CONFIG.retroarchHost;
     const isLocal = h === 'localhost' || h === '127.0.0.1' || h === '::1';
-    if (!isLocal) return { ok: false, reason: 'RetroArch is not on this machine' };
+    if (!isLocal) { console.log('[Main] RetroArch not local, skipping'); return { ok: false, reason: 'RetroArch is not on this machine' }; }
 
     const gamesDir = path.join(__dirname, '../games');
     let game;
@@ -356,17 +357,21 @@ function setupIPC() {
     }
 
     const romPath = _findRom(game.rom_name);
+    console.log(`[Main] ROM lookup: ${game.rom_name} → ${romPath || 'NOT FOUND'}`);
     if (!romPath) return { ok: false, reason: `ROM not found: ${game.rom_name}` };
 
     const { spawn } = require('child_process');
-    const args = ['-L', game.core, romPath, '--fullscreen'];
+    // Launch via bash in a new session to escape Electron's GPU process group
+    const cmd = `${CONFIG.retroarchBin} -L "${game.core}" "${romPath}" > /tmp/retroarch-launch.log 2>&1`;
 
     try {
-      const child = spawn(CONFIG.retroarchBin, args, {
+      const child = spawn('bash', ['-c', cmd], {
         detached: true,
         stdio: 'ignore',
+        env: { ...process.env },
       });
       child.unref();
+      console.log(`[Main] RetroArch spawned via bash, PID=${child.pid}`);
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: e.message };
@@ -395,6 +400,13 @@ function setupTournamentIPC() {
     const t = tournamentManager.get(tId);
     if (!t) throw new Error('Tournament not found: ' + tId);
     return t.addPlayer(playerId, name, {});
+  });
+
+  // Step 2: given player address, build the raw tx and return JoyID sign URL
+  ipcMain.handle('tournament:buildPlayerPayTx', async (_, tId, playerId, playerAddress) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.buildPlayerPayTx(playerId, playerAddress);
   });
 
   ipcMain.handle('tournament:markPaid', (_, tId, playerId) => {
@@ -445,8 +457,11 @@ function _wireTournamentToRenderer(tm) {
     if (mainWindow) mainWindow.webContents.send('tournament:event', { event, ...data });
   };
 
-  tm.on('invoice',           data => { console.log('[TM→UI] invoice', data);       push('invoice', data); });
-  tm.on('player_paid',       data => { console.log('[TM→UI] player_paid', data);  push('player_paid', data); });
+  tm.on('invoice',           data => { console.log('[TM→UI] invoice', data);            push('invoice', data); });
+  tm.on('player_registered', data => { console.log('[TM→UI] player_registered', data); push('player_registered', data); });
+  tm.on('sign_url',          data => { console.log('[TM→UI] sign_url', data);           push('sign_url', data); });
+  tm.on('deposit_timeout',   data => { console.log('[TM→UI] deposit_timeout', data);    push('deposit_timeout', data); });
+  tm.on('player_paid',       data => { console.log('[TM→UI] player_paid', data);        push('player_paid', data); });
   tm.on('started',           data => { console.log('[TM→UI] started', data);      push('started', data); });
   tm.on('scores',            data => { console.log('[TM→UI] scores', data);       push('scores', data); });
   tm.on('winner',            data => { console.log('[TM→UI] winner', data);       push('winner', data); });

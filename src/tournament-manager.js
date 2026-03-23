@@ -143,23 +143,13 @@ class Tournament extends EventEmitter {
     const fiberPeerId   = opts.fiberPeerId   || null; // player's Fiber node peer ID
     const fiberAddr     = opts.fiberAddr     || null; // player's Fiber node address (multiaddr)
 
-    // ── JoyID L1 path (preferred when agent wallet is available) ──────────────
-    let entryInvoice, paymentHash, joyidUri, slotIndex;
-    if (this._wallet) {
-      slotIndex    = Object.keys(this.players).length;
-      joyidUri     = this._wallet.buildJoyIDUri(this.id, slotIndex, this.entryFee);
-      entryInvoice = joyidUri;   // UI uses entryInvoice field
-      paymentHash  = null;
+    // Slot index is position in registration order (stable, 0-based)
+    const slotIndex = Object.keys(this.players).length;
 
-      console.log(`[Tournament] JoyID entry URI for ${name} (slot ${slotIndex}): ${joyidUri}`);
-
-      // Start deposit watcher on first player add (covers all slots)
-      if (slotIndex === 0) {
-        this._startDepositWatcher();
-      }
-
-    // ── Fiber invoice path (fallback) ─────────────────────────────────────────
-    } else {
+    // ── Fiber invoice path (used when wallet flow hasn't built the tx yet) ─────
+    // The full L1 path is in buildPlayerPayTx() — called after player provides address.
+    let entryInvoice = null, paymentHash = null;
+    if (!this._wallet) {
       const amountShannon = FiberClient.ckbToShannon(this.entryFee);
       const description   = `FiberQuest: ${this.gameDef.name} — ${this.mode?.name || this.modeId} — ${name}`;
       console.log(`[Tournament] Generating Fiber entry invoice for ${name} (${this.entryFee} CKB)...`);
@@ -169,7 +159,6 @@ class Tournament extends EventEmitter {
       });
       entryInvoice = invoiceResult.invoice_address;
       paymentHash  = invoiceResult.payment_hash;
-      joyidUri     = null;
     }
 
     if (payoutInvoice) {
@@ -180,33 +169,62 @@ class Tournament extends EventEmitter {
 
     this.players[playerId] = {
       name,
+      slotIndex,
       entryInvoice,
       paymentHash,
       payoutInvoice,
-      joyidUri,
-      slotIndex: slotIndex ?? null,
       paid: false,
       score: 0,
       joinedAt: Date.now(),
       senderAddress: null,
       depositCell: null,
+      signUrl: null,     // set by buildPlayerPayTx after address is provided
       fiberPeerId,
       fiberAddr,
     };
     this.scores[playerId] = 0;
     this.state = 'WAITING_PLAYERS';
 
-    console.log(`[Tournament] Player ${name} registered. Entry invoice: ${entryInvoice.slice(0, 40)}...`);
-    this.emit('invoice', {
-      playerId,
-      name,
-      invoice: entryInvoice,
-      joyidUri,
-      amount_ckb: this.entryFee,
-      payoutReady: !!payoutInvoice,
-    });
+    console.log(`[Tournament] Player ${name} registered at slot ${slotIndex} — awaiting address for L1 tx build`);
+    this.emit('player_registered', { playerId, name, slotIndex, amount_ckb: this.entryFee });
 
-    return { playerId, name, entryInvoice, joyidUri: joyidUri || null, amount_ckb: this.entryFee, payoutReady: !!payoutInvoice };
+    return { playerId, name, slotIndex, amount_ckb: this.entryFee, payoutReady: !!payoutInvoice };
+  }
+
+  /**
+   * Step 2 of player registration (L1 path):
+   * Given the player's CKB address, build a raw deposit transaction and return
+   * the JoyID deep-link URL for them to scan and sign.
+   *
+   * After this call a per-slot watcher starts polling the chain for the
+   * specific outputData marker. No snapshot ambiguity — each slot has a unique marker.
+   *
+   * @param {string} playerId
+   * @param {string} playerAddress  — player's CKB address (from their JoyID wallet)
+   * @returns {{ playerId, signUrl, dataMarker, rawTx }}
+   */
+  async buildPlayerPayTx (playerId, playerAddress) {
+    const player = this.players[playerId];
+    if (!player) throw new Error(`Unknown player: ${playerId}`);
+    if (player.paid) throw new Error(`${player.name} already paid`);
+    if (!this._wallet) throw new Error('Agent wallet not configured');
+
+    const { rawTx, dataMarker } = await this._wallet.buildPlayerDepositTx(
+      playerAddress, this.id, player.slotIndex, this.entryFee
+    );
+    const signUrl = this._wallet.buildJoyIDSignTxUrl(rawTx, playerAddress);
+
+    player.signUrl       = signUrl;
+    player.senderAddress = playerAddress;  // we know their address now
+    player.dataMarker    = dataMarker;
+
+    console.log(`[Tournament] Built L1 deposit tx for ${player.name} — marker ${dataMarker}`);
+    this.emit('sign_url', { playerId, name: player.name, signUrl, dataMarker });
+
+    // Start per-slot chain watcher now that we have the marker
+    this._watchSlotDeposit(playerId, dataMarker);
+
+    return { playerId, signUrl, dataMarker, rawTx };
   }
 
   /**
@@ -240,52 +258,41 @@ class Tournament extends EventEmitter {
     }
   }
 
-  // ── L1 deposit watcher (JoyID) ────────────────────────────────────────────
+  // ── L1 deposit watcher (per-slot, data-marker based) ─────────────────────
 
   /**
-   * Watch for new CKB deposits at the agent address.
-   * Assigns deposits to unpaid player slots in registration order.
+   * Watch for a specific player's deposit using their unique outputData marker.
+   * Each slot polls independently — no shared state, no collision risk.
+   *
+   * Called automatically by buildPlayerPayTx after the tx is built.
    */
-  _startDepositWatcher () {
-    if (this._depositWatcherRunning) return;
-    this._depositWatcherRunning = true;
-    const snapshot = this._depositSnapshot || new Set();
-    const minCkb = this.entryFee;
-    const intervalMs = 6000;
-    console.log(`[Tournament] Deposit watcher started — looking for ${minCkb} CKB deposits`);
+  _watchSlotDeposit (playerId, dataMarker) {
+    const player      = this.players[playerId];
+    const intervalMs  = 6000;
+    const deadline    = this.registrationDeadline + 60_000; // 1 min grace after reg closes
+    console.log(`[Tournament] Slot watcher started for ${player.name} — marker ${dataMarker}`);
 
     const tick = async () => {
+      if (player.paid) return;  // already marked paid, stop
       if (this.state !== 'WAITING_PLAYERS' && this.state !== 'CREATED') return;
       try {
-        const newCells = await this._wallet.findNewDeposits(snapshot, Math.round(minCkb * 1e8));
-        // Get ordered list of unpaid players
-        const unpaid = Object.entries(this.players)
-          .filter(([, p]) => !p.paid)
-          .sort(([, a], [, b]) => a.joinedAt - b.joinedAt);
-
-        for (let i = 0; i < Math.min(newCells.length, unpaid.length); i++) {
-          const cell = newCells[i];
-          const [playerId, player] = unpaid[i];
-          const cellKey = `${cell.outPoint.txHash}:${cell.outPoint.index}`;
-          if (snapshot.has(cellKey)) continue;
-          snapshot.add(cellKey); // don't double-assign
-          console.log(`[Tournament] ✅ L1 deposit detected for ${player.name} — cell ${cell.outPoint.txHash}`);
-          this.players[playerId].depositCell = cell;
-          // Resolve sender address BEFORE marking paid so payout path is ready
-          const sender = await this._wallet.getDepositSender(cell).catch(() => null);
-          if (sender) {
-            this.players[playerId].senderAddress = sender;
-            console.log(`[Tournament] Sender address for ${player.name}: ${sender}`);
-          } else {
-            console.warn(`[Tournament] ⚠️ Could not resolve sender for ${player.name} — L1 payout will need manual address`);
-          }
+        const cell = await this._wallet.findDepositByMarker(dataMarker);
+        if (cell) {
+          console.log(`[Tournament] ✅ L1 deposit confirmed for ${player.name} — ${cell.outPoint.txHash}`);
+          player.depositCell = cell;
+          // senderAddress already set from playerAddress in buildPlayerPayTx
           this.markPaid(playerId);
+          return;  // done
         }
+        console.log(`[Tournament] Waiting for ${player.name} deposit (marker ${dataMarker})…`);
       } catch (e) {
-        console.warn('[Tournament] Deposit watcher error:', e.message);
+        console.warn(`[Tournament] Slot watcher error for ${player.name}:`, e.message);
       }
-      if (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') {
+      if (Date.now() < deadline) {
         setTimeout(tick, intervalMs);
+      } else {
+        console.warn(`[Tournament] Deposit timeout for ${player.name}`);
+        this.emit('deposit_timeout', { playerId, name: player.name });
       }
     };
     tick();
@@ -718,11 +725,16 @@ class TournamentManager extends EventEmitter {
       );
     }
 
-    // Snapshot existing outpoints so we can detect new JoyID deposits
+    // Early snapshot as fallback — _writeEscrowCell will overwrite with a post-escrow snapshot
     if (this.wallet) {
       this.wallet.snapshotOutpoints()
-        .then(snap => { t._depositSnapshot = snap; console.log(`[TournamentManager] Deposit snapshot: ${snap.size} existing cells`) })
-        .catch(() => { t._depositSnapshot = new Set() });
+        .then(snap => {
+          if (!t._depositSnapshot) {  // don't overwrite the post-escrow snapshot
+            t._depositSnapshot = snap;
+            console.log(`[TournamentManager] Deposit snapshot (early): ${snap.size} cells`);
+          }
+        })
+        .catch(() => {});
     }
 
     // Registration deadline check
@@ -746,6 +758,12 @@ class TournamentManager extends EventEmitter {
     t.chainOutPoint = outPoint;
     console.log(`[TournamentManager] Escrow cell on-chain: ${txHash}`);
     this.emit('chain_escrow', { tournamentId: t.id, txHash, outPoint });
+
+    // Re-snapshot AFTER escrow tx confirms so its change output isn't mistaken for a deposit
+    if (this.wallet) {
+      t._depositSnapshot = await this.wallet.snapshotOutpoints();
+      console.log(`[TournamentManager] Deposit snapshot updated post-escrow: ${t._depositSnapshot.size} cells`);
+    }
   }
 
   async _checkRegistrationDeadline(t) {
