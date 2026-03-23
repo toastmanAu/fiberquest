@@ -5,7 +5,7 @@
   "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "rom": "~/roms/nes/Double Dragon (USA).zip",
   "tournament_format": "survival",
-  "description": "Beat-em-up bracket — last player standing wins the round. P1 vs P2 head-to-head.",
+  "description": "Beat-em-up bracket \u2014 last player standing wins the round. P1 vs P2 head-to-head.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0x0043",
@@ -26,7 +26,7 @@
       "size": 1,
       "type": "uint8",
       "encoding": "decimal",
-      "notes": "P2 lives — offset from P1 by ~12 bytes (TCRF estimate; verify live)"
+      "notes": "P2 lives \u2014 offset from P1 by ~12 bytes (TCRF estimate; verify live)"
     },
     "timer": {
       "address": "0x0054",
@@ -37,7 +37,10 @@
     }
   },
   "win_condition": "last_lives_standing",
-  "tournament_rules": "First to 0 lives loses. 3 rounds. Timer adds pressure — whoever has more HP when timer hits 0 survives.",
+  "tournament_rules": "First to 0 lives loses. 3 rounds. Timer adds pressure \u2014 whoever has more HP when timer hits 0 survives.",
   "confidence": "high",
-  "sources": ["libretro-database/cht AR: 0043:04 lives, 0042:0D health"]
+  "sources": [
+    "libretro-database/cht AR: 0043:04 lives, 0042:0D health"
+  ],
+  "rom_name": "Double Dragon (USA).nes"
 }

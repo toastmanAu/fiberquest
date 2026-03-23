@@ -5,7 +5,7 @@
   "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "rom": "~/roms/nes/Super Mario Bros. 3 (USA) (Rev A).zip",
   "tournament_format": "score_attack",
-  "description": "Timed score attack — most points accumulated in a fixed time window wins.",
+  "description": "Timed score attack \u2014 most points accumulated in a fixed time window wins.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0x0736",
@@ -44,7 +44,11 @@
     }
   },
   "win_condition": "highest_score",
-  "tournament_rules": "15-minute score attack. Start World 1-1 simultaneously. Most points wins. No warps — penalise if whistle used.",
+  "tournament_rules": "15-minute score attack. Start World 1-1 simultaneously. Most points wins. No warps \u2014 penalise if whistle used.",
   "confidence": "high",
-  "sources": ["libretro-database/cht NES: 0736 lives, 0000ED power-up", "TCRF NES RAM map"]
+  "sources": [
+    "libretro-database/cht NES: 0736 lives, 0000ED power-up",
+    "TCRF NES RAM map"
+  ],
+  "rom_name": "Super Mario Bros. 3 (USA).nes"
 }

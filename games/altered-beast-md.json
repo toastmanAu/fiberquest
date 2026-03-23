@@ -5,7 +5,7 @@
   "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "rom": "~/roms/megadrive/Altered Beast (USA, Europe).zip",
   "tournament_format": "survival",
-  "description": "Co-op arcade survival — track lives and progress through levels. Most levels cleared wins.",
+  "description": "Co-op arcade survival \u2014 track lives and progress through levels. Most levels cleared wins.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0xFFB120",
@@ -58,8 +58,11 @@
     }
   },
   "win_condition": "last_lives_standing",
-  "tournament_rules": "Arcade co-op — track which player survives furthest through stages. Tiebreaker: most lives at game over. Power-up level (beast form) is secondary ranking metric.",
+  "tournament_rules": "Arcade co-op \u2014 track which player survives furthest through stages. Tiebreaker: most lives at game over. Power-up level (beast form) is secondary ranking metric.",
   "confidence": "high",
-  "notes": "MD version preferred over SMS — better graphics, tighter controls, 2P simultaneous co-op is smoother.",
-  "sources": ["libretro-database/cht MD AR: FFB120 P1 lives, FFCF10 P1 health, FFB126 P2 lives, FFCF50 P2 health"]
+  "notes": "MD version preferred over SMS \u2014 better graphics, tighter controls, 2P simultaneous co-op is smoother.",
+  "sources": [
+    "libretro-database/cht MD AR: FFB120 P1 lives, FFCF10 P1 health, FFB126 P2 lives, FFCF50 P2 health"
+  ],
+  "rom_name": "Altered Beast (USA, Europe).md"
 }

@@ -6,21 +6,21 @@
   "rom": "~/roms/arcade/simpsons.zip",
   "rom_notes": "Full 4-player World version (simpsons.zip). 14 ROM files, 7.2MB uncompressed. Also have simpsons2pj.zip (2P Japan) as fallback.",
   "tournament_format": "survival",
-  "description": "Co-op beat-em-up arcade survival — track lives and score. Konami classic.",
+  "description": "Co-op beat-em-up arcade survival \u2014 track lives and score. Konami classic.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0x0083",
       "size": 1,
       "type": "uint8",
       "encoding": "decimal",
-      "notes": "FBNeo arcade RAM. Confidence: medium — address sourced from MAME/FBNeo memory map research. Needs live verification."
+      "notes": "FBNeo arcade RAM. Confidence: medium \u2014 address sourced from MAME/FBNeo memory map research. Needs live verification."
     },
     "p2_lives": {
       "address": "0x008B",
       "size": 1,
       "type": "uint8",
       "encoding": "decimal",
-      "notes": "P2 lives — estimated +8 byte offset from P1. Needs live verification."
+      "notes": "P2 lives \u2014 estimated +8 byte offset from P1. Needs live verification."
     },
     "p1_health": {
       "address": "0x0082",
@@ -41,12 +41,16 @@
       "size": 1,
       "type": "uint8",
       "encoding": "decimal",
-      "notes": "Credit counter — standard Konami arcade offset."
+      "notes": "Credit counter \u2014 standard Konami arcade offset."
     }
   },
   "win_condition": "last_lives_standing",
   "tournament_rules": "2-player co-op. Track who survives furthest through stages. Credit-limited run (set credits to 3 at start). Tiebreaker: score.",
   "confidence": "low",
-  "notes": "RAM addresses are estimated — Konami arcade hardware layout. MUST verify with RetroArch memory viewer before using in production. The hi-score file (simpsons2pj.nv) suggests FBNeo runs this correctly.",
-  "sources": ["MAME/FBNeo Konami hardware memory layout (estimated)", "libretro-database hi-score file confirms ROM runs in FBNeo"]
+  "notes": "RAM addresses are estimated \u2014 Konami arcade hardware layout. MUST verify with RetroArch memory viewer before using in production. The hi-score file (simpsons2pj.nv) suggests FBNeo runs this correctly.",
+  "sources": [
+    "MAME/FBNeo Konami hardware memory layout (estimated)",
+    "libretro-database hi-score file confirms ROM runs in FBNeo"
+  ],
+  "rom_name": "simpsons.zip"
 }

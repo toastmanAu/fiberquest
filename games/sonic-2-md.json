@@ -5,7 +5,7 @@
   "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "rom": "~/roms/megadrive/Sonic The Hedgehog 2 (World) (Rev A).md",
   "tournament_format": "score_attack",
-  "description": "Score attack or co-op race — most rings/score after completing Emerald Hill Zone wins. Also supports 2-player split-screen race mode (Sonic vs Tails).",
+  "description": "Score attack or co-op race \u2014 most rings/score after completing Emerald Hill Zone wins. Also supports 2-player split-screen race mode (Sonic vs Tails).",
   "ram_addresses": {
     "p1_lives": {
       "address": "0xFFFE12",
@@ -26,14 +26,14 @@
       "size": 4,
       "type": "uint32_be",
       "encoding": "decimal",
-      "notes": "Score (32-bit BE). Same layout as Sonic 1 — confirmed TCRF location."
+      "notes": "Score (32-bit BE). Same layout as Sonic 1 \u2014 confirmed TCRF location."
     },
     "stage_act": {
       "address": "0xFFFE10",
       "size": 2,
       "type": "uint16_be",
       "encoding": "hex",
-      "notes": "AR: FFFE10:XXYY — XX=stage (0-7), YY=act (0-1). Stage/act indicator. Poll at 0xFE10."
+      "notes": "AR: FFFE10:XXYY \u2014 XX=stage (0-7), YY=act (0-1). Stage/act indicator. Poll at 0xFE10."
     },
     "timer": {
       "address": "0xFFFE24",
@@ -44,10 +44,11 @@
     }
   },
   "win_condition": "highest_score",
-  "tournament_rules": "Score attack — Emerald Hill Zone (2 acts). Highest score wins. Simultaneous start on same save state. Rings held at act end contribute to score bonus. 2-player split-screen race also viable: Sonic vs Tails, first to finish Zone 1 wins.",
+  "tournament_rules": "Score attack \u2014 Emerald Hill Zone (2 acts). Highest score wins. Simultaneous start on same save state. Rings held at act end contribute to score bonus. 2-player split-screen race also viable: Sonic vs Tails, first to finish Zone 1 wins.",
   "confidence": "high",
   "sources": [
     "libretro-database/cht MD AR: FFFE12 lives, FFFE20 rings, FFFE10 stage/act, FFFE24 timer",
     "TCRF Sonic 2 MD RAM map (same layout as Sonic 1)"
-  ]
+  ],
+  "rom_name": "Sonic The Hedgehog 2 (USA, Europe).md"
 }

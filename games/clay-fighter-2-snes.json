@@ -5,7 +5,7 @@
   "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Clay Fighter 2 - Judgment Clay (USA).sfc",
   "tournament_format": "versus",
-  "description": "1v1 fighter — best of 3 rounds. Track HP to determine round winner.",
+  "description": "1v1 fighter \u2014 best of 3 rounds. Track HP to determine round winner.",
   "ram_addresses": {
     "p1_health": {
       "address": "0x1828",
@@ -32,5 +32,8 @@
   "win_condition": "opponent_health_zero",
   "tournament_rules": "Standard fighter rules. Round ends when P health = 0 or timer expires (lower HP loses). Best of 3 rounds per match.",
   "confidence": "high",
-  "sources": ["libretro-database/cht SNES AR: 7E1828 P1 HP, 7E1B14 P2 HP, 7E0FC6 timer"]
+  "sources": [
+    "libretro-database/cht SNES AR: 7E1828 P1 HP, 7E1B14 P2 HP, 7E0FC6 timer"
+  ],
+  "rom_name": "Clay Fighter 2 - Judgement Clay (USA).sfc"
 }

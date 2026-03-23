@@ -5,7 +5,7 @@
   "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "rom": "~/roms/nes/Bubble Bobble (USA, Europe).nes",
   "tournament_format": "co-op_race",
-  "description": "2-player co-op — first pair to clear the most rounds wins. Or competitive: P1 vs P2, highest score after N rounds. 100-level classic with a perfect tournament arc.",
+  "description": "2-player co-op \u2014 first pair to clear the most rounds wins. Or competitive: P1 vs P2, highest score after N rounds. 100-level classic with a perfect tournament arc.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0x002E",
@@ -44,9 +44,10 @@
     }
   },
   "win_condition": "highest_round_or_score",
-  "tournament_rules": "2-player co-op race. Both players start simultaneously. First team to clear round 20 wins (or furthest round reached if time limit hit). Alternative: competitive mode — P1 vs P2 score after 10 rounds (track who pops more enemies). Recommend starting on round 1, 5 lives each.",
+  "tournament_rules": "2-player co-op race. Both players start simultaneously. First team to clear round 20 wins (or furthest round reached if time limit hit). Alternative: competitive mode \u2014 P1 vs P2 score after 10 rounds (track who pops more enemies). Recommend starting on round 1, 5 lives each.",
   "confidence": "high",
   "sources": [
     "libretro-database/cht NES AR: 002E P1 lives, 0042 P2 lives, 0401 round, 040D timer"
-  ]
+  ],
+  "rom_name": "Bubble Bobble (USA).nes"
 }
