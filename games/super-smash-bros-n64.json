@@ -3,7 +3,7 @@
   "name": "Super Smash Bros.",
   "system": "n64",
   "rom_name": "Super Smash Bros. (USA).z64",
-  "core": "mupen64plus_next",
+  "core": "/home/phill/.config/retroarch/cores/mupen64plus_next_libretro.so",
   "description": "4-player stock match. Last fighter standing wins the prize pool.",
 
   "ram_addresses": {

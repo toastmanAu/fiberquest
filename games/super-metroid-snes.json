@@ -2,7 +2,7 @@
   "id": "super-metroid-snes",
   "title": "Super Metroid",
   "platform": "snes",
-  "core": "snes9x",
+  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Super Metroid (Japan, USA).7z",
   "tournament_format": "speedrun",
   "description": "Speedrun race — fastest completion of a defined route wins. Track energy as health indicator.",

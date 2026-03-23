@@ -2,7 +2,7 @@
   "id": "clay-fighter-2-snes",
   "title": "ClayFighter 2: Judgment Clay",
   "platform": "snes",
-  "core": "snes9x",
+  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Clay Fighter 2 - Judgment Clay (USA).sfc",
   "tournament_format": "versus",
   "description": "1v1 fighter — best of 3 rounds. Track HP to determine round winner.",

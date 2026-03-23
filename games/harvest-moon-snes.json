@@ -3,7 +3,7 @@
   "title": "Harvest Moon",
   "platform": "snes",
   "system": "snes",
-  "core": "snes9x",
+  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Harvest Moon (USA).sfc",
   "rom_alt": "~/roms/snes/Harvest Moon (USA).7z",
   "genre": "simulation",

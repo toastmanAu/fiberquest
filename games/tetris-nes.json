@@ -3,7 +3,7 @@
   "name": "Tetris",
   "system": "nes",
   "rom_name": "Tetris (USA).nes",
-  "core": "fceumm",
+  "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "description": "The universal classic. Highest score or most lines cleared wins. No explanation needed.",
 
   "ram_addresses": {

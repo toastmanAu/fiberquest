@@ -2,7 +2,7 @@
   "id": "golden-axe-md",
   "title": "Golden Axe",
   "platform": "megadrive",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "rom": "~/roms/megadrive/Golden Axe (World) (v1.1).zip",
   "tournament_format": "survival",
   "description": "Co-op beat-em-up — track lives and score. Highest combined score at end of game wins.",

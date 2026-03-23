@@ -2,7 +2,7 @@
   "id": "simpsons-arcade",
   "title": "The Simpsons (Arcade)",
   "platform": "arcade",
-  "core": "fbneo",
+  "core": "/home/phill/.config/retroarch/cores/fbneo_libretro.so",
   "rom": "~/roms/arcade/simpsons.zip",
   "rom_notes": "Full 4-player World version (simpsons.zip). 14 ROM files, 7.2MB uncompressed. Also have simpsons2pj.zip (2P Japan) as fallback.",
   "tournament_format": "survival",

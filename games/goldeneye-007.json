@@ -2,7 +2,7 @@
   "id": "goldeneye-007-n64",
   "title": "GoldenEye 007",
   "platform": "n64",
-  "core": "mupen64plus_next",
+  "core": "/home/phill/.config/retroarch/cores/mupen64plus_next_libretro.so",
   "rom": "~/roms/n64/GoldenEye 007 (USA).z64",
   "tournament_format": "versus",
   "description": "4-player multiplayer deathmatch — most kills in a time limit wins. The definitive couch multiplayer game.",

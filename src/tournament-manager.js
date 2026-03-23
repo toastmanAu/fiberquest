@@ -19,6 +19,7 @@
 const { EventEmitter } = require('events');
 const { RamEngine, loadGameDef } = require('./ram-engine');
 const FiberClient = require('./fiber-client');
+const { ChainStore, STATE: CHAIN_STATE } = require('./chain-store');
 
 // ── BCD decoder ──────────────────────────────────────────────────────────────
 
@@ -83,15 +84,23 @@ function decodeScore(state, gameDef, mode) {
 class Tournament extends EventEmitter {
   constructor(opts, fiber) {
     super();
-    this.id        = `t_${Date.now()}`;
+    const ts = Date.now();
+    this.id        = opts.id || `fq_${(require('crypto').createHash('sha256')
+                       .update(`${opts.gameId || 'game'}-${ts}`)
+                       .digest('hex')).slice(0, 8)}_${ts}`;
     this.gameId    = opts.gameId;
     this.modeId    = opts.mode || 'highest_score';
     this.entryFee  = opts.entryFee || 10;           // CKB
+    this.minPlayers = opts.minPlayers || 2;
     this.maxPlayers = opts.players || 2;
     this.timeLimitMs = (opts.timeLimitMinutes || 5) * 60 * 1000;
     this.raHost    = opts.raHost || '127.0.0.1';
     this.raPort    = opts.raPort || 55355;
     this.currency  = opts.currency || 'Fibb';       // Fibb=mainnet, Fibt=testnet
+    // Registration window — default 10 min from creation
+    this.registrationDeadline = opts.registrationDeadline || (Date.now() + 10 * 60 * 1000);
+    // Buffer after game ends before payout — allows result submission + on-chain finality
+    this.settlementBufferMs = opts.settlementBufferMs || 30000; // 30s default
 
     this.fiber     = fiber;
     this.gameDef   = loadGameDef(this.gameId);
@@ -104,6 +113,8 @@ class Tournament extends EventEmitter {
     this.engine    = null;
     this._timer    = null;
     this._startedAt = null;
+    this.chainOutPoint = null;  // Set after escrow cell is written on-chain
+    this.createdAt = opts.createdAt || Date.now();
 
     console.log(`[Tournament] Created ${this.id} — ${this.gameId} / ${this.modeId} — ${this.entryFee} CKB × ${this.maxPlayers}p`);
   }
@@ -128,21 +139,41 @@ class Tournament extends EventEmitter {
       throw new Error(`Player ${playerId} already registered`);
     }
 
-    const amountShannon = FiberClient.ckbToShannon(this.entryFee);
-    const description   = `FiberQuest: ${this.gameDef.name} — ${this.mode?.name || this.modeId} — ${name}`;
-
-    console.log(`[Tournament] Generating entry invoice for ${name} (${this.entryFee} CKB)...`);
-    const invoiceResult = await this.fiber.newInvoice(amountShannon, description, {
-      currency: this.currency,
-      expiry: 0xe10,  // 3600 seconds — FiberClient converts to hex string
-    });
-
-    const entryInvoice  = invoiceResult.invoice_address;
-    const paymentHash   = invoiceResult.payment_hash;
     const payoutInvoice = opts.payoutInvoice || null;
+    const fiberPeerId   = opts.fiberPeerId   || null; // player's Fiber node peer ID
+    const fiberAddr     = opts.fiberAddr     || null; // player's Fiber node address (multiaddr)
+
+    // ── JoyID L1 path (preferred when agent wallet is available) ──────────────
+    let entryInvoice, paymentHash, joyidUri, slotIndex;
+    if (this._wallet) {
+      slotIndex    = Object.keys(this.players).length;
+      joyidUri     = this._wallet.buildJoyIDUri(this.id, slotIndex, this.entryFee);
+      entryInvoice = joyidUri;   // UI uses entryInvoice field
+      paymentHash  = null;
+
+      console.log(`[Tournament] JoyID entry URI for ${name} (slot ${slotIndex}): ${joyidUri}`);
+
+      // Start deposit watcher on first player add (covers all slots)
+      if (slotIndex === 0) {
+        this._startDepositWatcher();
+      }
+
+    // ── Fiber invoice path (fallback) ─────────────────────────────────────────
+    } else {
+      const amountShannon = FiberClient.ckbToShannon(this.entryFee);
+      const description   = `FiberQuest: ${this.gameDef.name} — ${this.mode?.name || this.modeId} — ${name}`;
+      console.log(`[Tournament] Generating Fiber entry invoice for ${name} (${this.entryFee} CKB)...`);
+      const invoiceResult = await this.fiber.newInvoice(amountShannon, description, {
+        currency: this.currency,
+        expiry: 0xe10,
+      });
+      entryInvoice = invoiceResult.invoice_address;
+      paymentHash  = invoiceResult.payment_hash;
+      joyidUri     = null;
+    }
 
     if (payoutInvoice) {
-      console.log(`[Tournament] Payout invoice registered for ${name} ✅ (autonomous payout ready)`);
+      console.log(`[Tournament] Payout invoice registered for ${name} ✅`);
     } else {
       console.log(`[Tournament] ⚠️  No payout invoice for ${name} — will emit payout_needed on win`);
     }
@@ -151,10 +182,16 @@ class Tournament extends EventEmitter {
       name,
       entryInvoice,
       paymentHash,
-      payoutInvoice,   // null = manual payout needed; set = agent pays automatically
+      payoutInvoice,
+      joyidUri,
+      slotIndex: slotIndex ?? null,
       paid: false,
       score: 0,
       joinedAt: Date.now(),
+      senderAddress: null,
+      depositCell: null,
+      fiberPeerId,
+      fiberAddr,
     };
     this.scores[playerId] = 0;
     this.state = 'WAITING_PLAYERS';
@@ -163,12 +200,13 @@ class Tournament extends EventEmitter {
     this.emit('invoice', {
       playerId,
       name,
-      invoice: entryInvoice,   // kept as 'invoice' for backwards compat
+      invoice: entryInvoice,
+      joyidUri,
       amount_ckb: this.entryFee,
       payoutReady: !!payoutInvoice,
     });
 
-    return { playerId, name, entryInvoice, amount_ckb: this.entryFee, payoutReady: !!payoutInvoice };
+    return { playerId, name, entryInvoice, joyidUri: joyidUri || null, amount_ckb: this.entryFee, payoutReady: !!payoutInvoice };
   }
 
   /**
@@ -200,6 +238,57 @@ class Tournament extends EventEmitter {
       console.log('[Tournament] All players paid — starting automatically');
       this.start().catch(e => this.emit('error', e));
     }
+  }
+
+  // ── L1 deposit watcher (JoyID) ────────────────────────────────────────────
+
+  /**
+   * Watch for new CKB deposits at the agent address.
+   * Assigns deposits to unpaid player slots in registration order.
+   */
+  _startDepositWatcher () {
+    if (this._depositWatcherRunning) return;
+    this._depositWatcherRunning = true;
+    const snapshot = this._depositSnapshot || new Set();
+    const minCkb = this.entryFee;
+    const intervalMs = 6000;
+    console.log(`[Tournament] Deposit watcher started — looking for ${minCkb} CKB deposits`);
+
+    const tick = async () => {
+      if (this.state !== 'WAITING_PLAYERS' && this.state !== 'CREATED') return;
+      try {
+        const newCells = await this._wallet.findNewDeposits(snapshot, Math.round(minCkb * 1e8));
+        // Get ordered list of unpaid players
+        const unpaid = Object.entries(this.players)
+          .filter(([, p]) => !p.paid)
+          .sort(([, a], [, b]) => a.joinedAt - b.joinedAt);
+
+        for (let i = 0; i < Math.min(newCells.length, unpaid.length); i++) {
+          const cell = newCells[i];
+          const [playerId, player] = unpaid[i];
+          const cellKey = `${cell.outPoint.txHash}:${cell.outPoint.index}`;
+          if (snapshot.has(cellKey)) continue;
+          snapshot.add(cellKey); // don't double-assign
+          console.log(`[Tournament] ✅ L1 deposit detected for ${player.name} — cell ${cell.outPoint.txHash}`);
+          this.players[playerId].depositCell = cell;
+          // Resolve sender address BEFORE marking paid so payout path is ready
+          const sender = await this._wallet.getDepositSender(cell).catch(() => null);
+          if (sender) {
+            this.players[playerId].senderAddress = sender;
+            console.log(`[Tournament] Sender address for ${player.name}: ${sender}`);
+          } else {
+            console.warn(`[Tournament] ⚠️ Could not resolve sender for ${player.name} — L1 payout will need manual address`);
+          }
+          this.markPaid(playerId);
+        }
+      } catch (e) {
+        console.warn('[Tournament] Deposit watcher error:', e.message);
+      }
+      if (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') {
+        setTimeout(tick, intervalMs);
+      }
+    };
+    tick();
   }
 
   // ── Payment polling ───────────────────────────────────────────────────────
@@ -313,10 +402,12 @@ class Tournament extends EventEmitter {
       this.scores[playerIds[0]] = score;
       this.players[playerIds[0]].score = score;
     } else {
-      // Multi-player: try p1_ / p2_ prefixed addresses
+      // Multi-player: use controller map if set, otherwise fall back to registration order
       for (let i = 0; i < playerIds.length; i++) {
         const pid = playerIds[i];
-        const prefix = `p${i + 1}_`;
+        // _controllerMap: { 'player-0': 0, 'player-1': 1 } — gamepad index = port (0-based)
+        const port = this._controllerMap?.[pid] ?? i;
+        const prefix = `p${port + 1}_`;
         const playerState = {};
 
         // Extract this player's addresses (p1_lives → lives etc)
@@ -377,6 +468,21 @@ class Tournament extends EventEmitter {
 
     this.emit('winner', { winner, board, reason, totalPot });
 
+    // Settlement buffer — allows result submission and on-chain finality
+    this.state = 'SETTLING';
+    const settlesAt = Date.now() + this.settlementBufferMs;
+    console.log(`[Tournament] Settlement buffer: ${this.settlementBufferMs / 1000}s — pays out at ${new Date(settlesAt).toISOString()}`);
+    this.emit('settling', { winner, board, reason, totalPot, settlesAt, settlementBufferMs: this.settlementBufferMs });
+
+    // Update chain state if we have a cell
+    if (this._chainStore && this.chainOutPoint) {
+      this._chainStore.beginSettlement(this.chainOutPoint, this._chainData(), winner.playerId)
+        .then(({ txHash, outPoint }) => { this.chainOutPoint = outPoint; })
+        .catch(e => console.warn('[Tournament] Chain settlement update failed:', e.message));
+    }
+
+    await new Promise(r => setTimeout(r, this.settlementBufferMs));
+
     // Payout
     await this._payout(winner, totalPot, board);
   }
@@ -430,9 +536,22 @@ class Tournament extends EventEmitter {
           this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, error: e.message });
           results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
         }
+      } else if (p.senderAddress && this._wallet) {
+        // ── L1 payout — deposit was via JoyID, send back to sender address ───
+        try {
+          console.log(`[Tournament] Sending L1 payout to ${p.name} @ ${p.senderAddress}...`);
+          const txHash = await this._wallet.sendL1Payment(p.senderAddress, payout_ckb);
+          console.log(`[Tournament] ✅ L1 payout sent to ${p.name} — tx: ${txHash}`);
+          this.emit('payout_sent', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, txHash });
+          results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'sent', txHash });
+        } catch (e) {
+          console.error(`[Tournament] ❌ L1 payout failed for ${p.name}:`, e.message);
+          this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, error: e.message });
+          results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
+        }
       } else {
-        // ── Manual payout — no invoice registered, ask host ──────────────────
-        console.log(`[Tournament] ⚠️  No payout invoice for ${p.name} — emitting payout_needed`);
+        // ── Manual payout — no invoice and no sender address ─────────────────
+        console.log(`[Tournament] ⚠️  No payout path for ${p.name} — emitting payout_needed`);
         this.emit('payout_needed', {
           playerId: pid,
           name: p.name,
@@ -446,6 +565,13 @@ class Tournament extends EventEmitter {
 
     this.state = 'COMPLETE';
     console.log('[Tournament] Complete.');
+
+    // Update chain cell to COMPLETE
+    if (this._chainStore && this.chainOutPoint) {
+      this._chainStore.completeTournament(this.chainOutPoint, this._chainData())
+        .catch(e => console.warn('[Tournament] Chain complete update failed:', e.message));
+    }
+
     this.emit('complete', {
       tournamentId: this.id,
       winner: { playerId, name: player?.name, score: winner.score },
@@ -453,6 +579,33 @@ class Tournament extends EventEmitter {
       payouts: results,
       totalPot,
     });
+  }
+
+  /** Snapshot of chain-serialisable tournament data */
+  _chainData() {
+    return {
+      id:                   this.id,
+      state:                this.state,
+      gameId:               this.gameId,
+      modeId:               this.modeId,
+      entryFee:             this.entryFee,
+      currency:             this.currency,
+      minPlayers:           this.minPlayers,
+      maxPlayers:           this.maxPlayers,
+      timeLimitMinutes:     this.timeLimitMs / 60000,
+      registrationDeadline: this.registrationDeadline,
+      settlementBufferMs:   this.settlementBufferMs,
+      players:              Object.entries(this.players).map(([id, p]) => ({
+                              id,
+                              name:        p.name,
+                              paid:        p.paid,
+                              paymentHash: p.paymentHash,
+                              fiberPeerId: p.fiberPeerId || null,
+                              fiberAddr:   p.fiberAddr   || null,
+                            })),
+      winner:               this.winner || null,
+      createdAt:            this.createdAt,
+    };
   }
 
   /**
@@ -502,25 +655,47 @@ class Tournament extends EventEmitter {
 class TournamentManager extends EventEmitter {
   constructor(opts = {}) {
     super();
-    this.fiberRpc   = opts.fiberRpc || process.env.FIBER_RPC_URL || 'http://127.0.0.1:8227';
+    this.fiberRpc   = opts.fiberRpc || process.env.FIBER_RPC_URL || 'http://127.0.0.1:18226';
     this.fiber      = new FiberClient(this.fiberRpc);
     this.tournaments = new Map();
     this._pollInterval = null;
+
+    // Chain store + agent wallet — optional, requires CKB_PRIVATE_KEY
+    this.chainStore = null;
+    this.wallet     = null;
+    if (opts.wallet || process.env.CKB_PRIVATE_KEY) {
+      try {
+        const { AgentWallet } = require('./agent-wallet');
+        this.wallet     = opts.wallet || new AgentWallet();
+        this.chainStore = new ChainStore({ wallet: this.wallet });
+        console.log(`[TournamentManager] Agent wallet: ${this.wallet.address}`);
+      } catch (e) {
+        console.warn('[TournamentManager] Chain store disabled:', e.message);
+      }
+    }
   }
 
   /**
-   * Create a new tournament.
+   * Create a new tournament and write escrow cell to CKB.
    * @param {object} opts
-   * @param {string} opts.gameId           - e.g. 'tetris-nes'
-   * @param {string} opts.mode             - tournament mode id e.g. 'highest_score'
-   * @param {number} opts.entryFee         - CKB per player
-   * @param {number} opts.players          - number of players (default 2)
-   * @param {number} opts.timeLimitMinutes - override default time limit
-   * @param {string} opts.currency         - 'Fibb' (mainnet) or 'Fibt' (testnet)
+   * @param {string} opts.gameId                - e.g. 'tetris-nes'
+   * @param {string} opts.mode                  - tournament mode id e.g. 'highest_score'
+   * @param {number} opts.entryFee              - CKB per player
+   * @param {number} opts.minPlayers            - minimum to proceed (default 2)
+   * @param {number} opts.players               - max players (default 2)
+   * @param {number} opts.timeLimitMinutes      - game time limit
+   * @param {number} opts.registrationMinutes   - registration window (default 10)
+   * @param {number} opts.settlementBufferMs    - buffer after game ends (default 30000)
+   * @param {string} opts.currency              - 'Fibb' (mainnet) or 'Fibt' (testnet)
    * @returns {Tournament}
    */
-  create(opts) {
-    const t = new Tournament(opts, this.fiber);
+  async create(opts) {
+    const registrationMs = (opts.registrationMinutes || 10) * 60 * 1000;
+    const t = new Tournament({
+      ...opts,
+      registrationDeadline: Date.now() + registrationMs,
+    }, this.fiber);
+    t._wallet = this.wallet;
     this.tournaments.set(t.id, t);
 
     // Bubble events up
@@ -529,12 +704,91 @@ class TournamentManager extends EventEmitter {
     t.on('started',       e => this.emit('started',       e));
     t.on('scores',        e => this.emit('scores',        { tournamentId: t.id, scores: e }));
     t.on('winner',        e => this.emit('winner',        { tournamentId: t.id, ...e }));
+    t.on('settling',      e => this.emit('settling',      { tournamentId: t.id, ...e }));
     t.on('payout_needed', e => this.emit('payout_needed', { tournamentId: t.id, ...e }));
     t.on('payout_sent',   e => this.emit('payout_sent',   { tournamentId: t.id, ...e }));
     t.on('complete',      e => this.emit('complete',      e));
     t.on('error',         e => this.emit('error',         e));
 
+    // Write escrow cell to CKB (async — non-blocking, logs result)
+    if (this.chainStore) {
+      t._chainStore = this.chainStore;
+      this._writeEscrowCell(t).catch(e =>
+        console.warn('[TournamentManager] Escrow cell write failed:', e.message)
+      );
+    }
+
+    // Snapshot existing outpoints so we can detect new JoyID deposits
+    if (this.wallet) {
+      this.wallet.snapshotOutpoints()
+        .then(snap => { t._depositSnapshot = snap; console.log(`[TournamentManager] Deposit snapshot: ${snap.size} existing cells`) })
+        .catch(() => { t._depositSnapshot = new Set() });
+    }
+
+    // Registration deadline check
+    const msUntilDeadline = t.registrationDeadline - Date.now();
+    setTimeout(() => this._checkRegistrationDeadline(t), msUntilDeadline);
+
     return t;
+  }
+
+  async _writeEscrowCell(t) {
+    let fiberPeerId = '';
+    try {
+      const info = await this.fiber.getNodeInfo();
+      fiberPeerId = info.node_id || '';
+    } catch (_) {}
+
+    const { txHash, outPoint } = await this.chainStore.createEscrowCell({
+      ...t._chainData(),
+      fiberPeerId,
+    });
+    t.chainOutPoint = outPoint;
+    console.log(`[TournamentManager] Escrow cell on-chain: ${txHash}`);
+    this.emit('chain_escrow', { tournamentId: t.id, txHash, outPoint });
+  }
+
+  async _checkRegistrationDeadline(t) {
+    if (t.state !== 'CREATED' && t.state !== 'WAITING_PLAYERS') return;
+    const paidPlayers = Object.values(t.players).filter(p => p.paid).length;
+    const metMin = paidPlayers >= t.minPlayers;
+
+    console.log(`[TournamentManager] Registration deadline reached for ${t.id}: ${paidPlayers}/${t.minPlayers} paid`);
+
+    if (!metMin) {
+      console.log(`[TournamentManager] Min players not met — cancelling ${t.id}`);
+      t.state = 'CANCELLED';
+      this.emit('cancelled', { tournamentId: t.id, reason: 'min_players_not_met', paidPlayers, minPlayers: t.minPlayers });
+      // Update chain cell
+      if (this.chainStore && t.chainOutPoint) {
+        await this.chainStore.closeRegistration(t.chainOutPoint, t._chainData())
+          .catch(e => console.warn('Chain cancel failed:', e.message));
+      }
+      // TODO: refund entry fees via Fiber
+    } else {
+      console.log(`[TournamentManager] Min players met — activating ${t.id}`);
+      if (this.chainStore && t.chainOutPoint) {
+        const { outPoint } = await this.chainStore.closeRegistration(t.chainOutPoint, t._chainData())
+          .catch(e => { console.warn('Chain funding failed:', e.message); return {}; });
+        if (outPoint) t.chainOutPoint = outPoint;
+      }
+      this.emit('registration_closed', { tournamentId: t.id, paidPlayers });
+    }
+  }
+
+  /**
+   * Scan CKB for all FiberQuest tournament cells and return their state.
+   * Works across all FiberQuest instances — no central server needed.
+   */
+  /**
+   * Scan CKB for FiberQuest tournament cells.
+   * With no arguments: returns ALL tournaments from ALL organizers globally.
+   * With a tournamentId: returns that specific tournament's cell.
+   * @param {string} [tournamentId]
+   */
+  async scanChain (tournamentId) {
+    if (!this.chainStore) throw new Error('Chain store not configured (set CKB_PRIVATE_KEY)');
+    return this.chainStore.scanTournaments(tournamentId);
   }
 
   get(id) { return this.tournaments.get(id); }

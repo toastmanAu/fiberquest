@@ -62,17 +62,26 @@ Each `games/<id>.json` defines:
 - `local_balance` / `remote_balance` are hex strings in Shannons (1 CKB = 1e8 Shannon)
 
 ## Live Infrastructure
-- **ckbnode fiber:** 192.168.68.87, RPC 127.0.0.1:8227, ~900 CKB local balance
-  - SSH tunnel from Pi5: `localhost:18227 → ckbnode:127.0.0.1:8227`
-- **N100 fiber:** 192.168.68.79, RPC 127.0.0.1:8226 (needs funding)
-- **Channel:** ckbnode ↔ N100, CHANNEL_READY
-- **Network:** mainnet (testnet pivot when code is solid)
+- **N100 fiber (testnet):** 192.168.68.91, RPC 127.0.0.1:8226, ~8,401 CKB balance
+  - SSH tunnel: `ssh -f -N -L 18226:127.0.0.1:8226 phill@192.168.68.91`
+  - Currency: **Fibt** (testnet) — NOT Fibb
+- **ckbnode fiber (mainnet):** 192.168.68.87, RPC 127.0.0.1:8227 — currently offline
+- **Channel:** N100 ↔ FiberQuest Pi, CHANNEL_READY
+- **RetroArch:** 192.168.68.84:55355 (Mortal Kombat SNES running)
 
-## Deliverables Needed (submission)
+## Current Status (March 22 2026)
+- **v0.0.1-alpha RELEASED** — GitHub Releases, AppImage (x64 + arm64) + deb
+- GUI: 4-view Electron tournament UI complete (Home, Setup, Live, Results)
+- Payment flow: TournamentManager ↔ FiberClient ↔ Fiber node wired end-to-end
+- UDP polling: fixed (READ_CORE_MEMORY requires SIZE param), 0% packet loss at 60Hz
+- OTA updates: electron-updater integrated
+- CI/CD: GitHub Actions on v* tags → AppImage/deb for x64 + arm64
+
+## Deliverables Needed (submission by March 25)
 1. ✅ Project summary
 2. Technical breakdown (needs rewrite)
 3. ✅ Repo: https://github.com/toastmanAu/fiberquest
-4. Testable version link (needs live deployment)
+4. ✅ Installable release: v0.0.1-alpha on GitHub Releases
 5. Screenshots or video
 
 ## Stack Constraints
@@ -83,7 +92,14 @@ Each `games/<id>.json` defines:
 - Fiber RPC via HTTP JSON-RPC
 
 ## Development Workflow
-- Verify Fiber calls: `node scripts/test-rpc.js http://localhost:18227`
-- Test RAM engine: `node src/ram-engine.js sf2-turbo`
+- SSH tunnel to N100: `ssh -f -N -L 18226:127.0.0.1:8226 phill@192.168.68.91`
+- Verify Fiber calls: `node scripts/test-rpc.js http://localhost:18226`
+- Test RAM engine: `POLL_HZ=60 node src/ram-engine.js mortal-kombat-snes`
 - Full Electron app: `npm start`
-- SSH tunnel to ckbnode: `ssh -f -N -L 18227:127.0.0.1:8227 orangepi@192.168.68.87`
+- Build release: `npm run release` (publishes to GitHub)
+- Install on Pi: `curl -fsSL https://github.com/toastmanAu/fiberquest/releases/latest/download/install.sh | bash`
+
+## Git Sync Rule
+**Local repo must always be at least as current as GitHub.**
+Before starting any session: `git pull origin main`
+Before committing: check `git status` and `git log --oneline origin/main..HEAD`

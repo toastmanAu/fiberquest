@@ -3,7 +3,7 @@
   "name": "Streets of Rage 2",
   "system": "megadrive",
   "rom_name": "Streets of Rage 2 (USA).md",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "Beat-em-up classic. Players fight through stages; highest score or most KOs wins the tournament.",
 
   "ram_addresses": {

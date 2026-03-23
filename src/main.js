@@ -5,13 +5,45 @@
 
 'use strict';
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const { Worker } = require('worker_threads');
 const GameServer = require('./game-server');
 const FiberClient = require('./fiber-client');
 const { TournamentManager } = require('./tournament-manager');
+
+// ── Secure key storage ──────────────────────────────────────────────────────
+
+function keysPath() {
+  return path.join(app.getPath('userData'), 'fiberquest-keys.enc');
+}
+
+function saveSecureKey(name, value) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('OS encryption unavailable');
+  const all = loadAllKeys();
+  all[name] = safeStorage.encryptString(value).toString('base64');
+  fs.writeFileSync(keysPath(), JSON.stringify(all));
+}
+
+function loadSecureKey(name) {
+  try {
+    const all = loadAllKeys();
+    if (!all[name]) return null;
+    return safeStorage.decryptString(Buffer.from(all[name], 'base64'));
+  } catch (_) { return null; }
+}
+
+function loadAllKeys() {
+  try { return JSON.parse(fs.readFileSync(keysPath(), 'utf8')); }
+  catch (_) { return {}; }
+}
+
+function deleteSecureKey(name) {
+  const all = loadAllKeys();
+  delete all[name];
+  fs.writeFileSync(keysPath(), JSON.stringify(all));
+}
 
 // electron-updater — no-ops gracefully in dev/unpackaged mode
 let autoUpdater;
@@ -27,17 +59,21 @@ try {
 // ── Config ─────────────────────────────────────────────────────────────────
 
 const CONFIG_DEFAULTS = {
-  fiberRpcUrl:       'http://127.0.0.1:8227',
-  gameServerPort:    8765,
-  retroarchHost:     '127.0.0.1',
-  retroarchUdp:      55355,
-  defaultEntryFee:   100,
-  defaultPlayers:    2,
-  defaultTimeLimit:  10,
-  defaultCurrency:   'Fibt',
-  devMode:           false,
-  retroarchBin:      'retroarch',
-  romsDir:           '',
+  fiberRpcUrl:                 process.env.FIBER_RPC_URL || 'http://127.0.0.1:18226',
+  ckbRpcUrl:                   process.env.CKB_RPC_URL  || 'https://testnet.ckbapp.dev/',
+  gameServerPort:              8765,
+  retroarchHost:               '127.0.0.1',
+  retroarchUdp:                55355,
+  defaultEntryFee:             100,
+  defaultPlayers:              2,
+  defaultMinPlayers:           2,
+  defaultTimeLimit:            10,
+  defaultCurrency:             'Fibt',
+  defaultRegistrationMinutes:  10,
+  settlementBufferSec:         30,
+  devMode:                     false,
+  retroarchBin:                'retroarch',
+  romsDir:                     '',
 };
 
 function getConfigPath() {
@@ -74,6 +110,7 @@ let mainWindow;
 let gameServer;
 let fiberClient;
 let tournamentManager;
+let agentWallet = null;
 
 // ── Window ─────────────────────────────────────────────────────────────────
 
@@ -138,6 +175,28 @@ function setupIPC() {
   }));
 
   // RetroArch UDP ping
+  // Send a message to RetroArch OSD (same UDP port as RAM polling)
+  ipcMain.handle('retroarch:showMsg', async (_, msg) => {
+    const dgram = require('dgram');
+    return new Promise((resolve) => {
+      const sock = dgram.createSocket('udp4');
+      const cmd = Buffer.from(`SHOW_MSG ${msg}\n`);
+      sock.send(cmd, CONFIG.retroarchUdp, CONFIG.retroarchHost, (err) => {
+        sock.close();
+        resolve({ ok: !err, error: err?.message });
+      });
+    });
+  });
+
+  // Set controller port mapping for a tournament (playerId → gamepad index)
+  ipcMain.handle('tournament:setControllerMap', (_, tId, map) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    t._controllerMap = map; // { 'player-0': 0, 'player-1': 1 }
+    console.log(`[Main] Controller map set for ${tId}:`, map);
+    return { ok: true };
+  });
+
   ipcMain.handle('retroarch:ping', async () => {
     const dgram = require('dgram');
     return new Promise((resolve) => {
@@ -181,6 +240,58 @@ function setupIPC() {
   ipcMain.handle('config:get', () => ({ ...CONFIG }));
   ipcMain.handle('config:save', (_, updates) => saveConfig(updates));
   ipcMain.handle('config:defaults', () => ({ ...CONFIG_DEFAULTS }));
+
+  // Agent — CKB wallet (key stored encrypted via safeStorage)
+  ipcMain.handle('agent:setKey', async (_, privateKey) => {
+    try {
+      saveSecureKey('ckbPrivateKey', privateKey);
+      agentWallet = _initAgentWallet(privateKey);
+      if (tournamentManager) {
+        tournamentManager.wallet     = agentWallet;
+        tournamentManager.chainStore = _initChainStore(agentWallet);
+      }
+      return { ok: true, address: agentWallet.address };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('agent:clearKey', () => {
+    deleteSecureKey('ckbPrivateKey');
+    agentWallet = null;
+    if (tournamentManager) {
+      tournamentManager.wallet     = null;
+      tournamentManager.chainStore = null;
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('agent:status', async () => {
+    if (!agentWallet) return { active: false, configured: false };
+    try {
+      const balance = await agentWallet.getBalance();
+      return { active: true, configured: true, address: agentWallet.address, balanceCkb: balance };
+    } catch (e) {
+      return { active: true, configured: true, address: agentWallet.address, balanceCkb: null, error: e.message };
+    }
+  });
+
+  // Chain — tournament discovery
+  ipcMain.handle('chain:scan', async () => {
+    if (!tournamentManager?.chainStore) return { ok: false, reason: 'Agent key not configured' };
+    try {
+      const tournaments = await tournamentManager.scanChain();
+      return { ok: true, tournaments };
+    } catch (e) {
+      return { ok: false, reason: e.message };
+    }
+  });
+
+  // QR code generation
+  ipcMain.handle('qr:generate', async (_, text) => {
+    const QRCode = require('qrcode');
+    return QRCode.toDataURL(text, { errorCorrectionLevel: 'L', margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+  });
 
   // RetroArch check / first-run setup
   ipcMain.handle('retroarch:check', async () => {
@@ -244,10 +355,10 @@ function setupIPC() {
       return { ok: false, reason: `Game not found: ${gameId}` };
     }
 
+    const romPath = _findRom(game.rom_name);
+    if (!romPath) return { ok: false, reason: `ROM not found: ${game.rom_name}` };
+
     const { spawn } = require('child_process');
-    const romPath = CONFIG.romsDir
-      ? path.join(CONFIG.romsDir, game.rom_name)
-      : game.rom_name;
     const args = ['-L', game.core, romPath, '--fullscreen'];
 
     try {
@@ -268,8 +379,14 @@ function setupIPC() {
 function setupTournamentIPC() {
   const fs = require('fs');
 
-  ipcMain.handle('tournament:create', (_, opts) => {
-    const t = tournamentManager.create(opts);
+  ipcMain.handle('tournament:create', async (_, opts) => {
+    const merged = {
+      registrationMinutes: CONFIG.defaultRegistrationMinutes,
+      settlementBufferMs:  CONFIG.settlementBufferSec * 1000,
+      minPlayers:          CONFIG.defaultMinPlayers,
+      ...opts,
+    };
+    const t = await tournamentManager.create(merged);
     tournamentManager.startPaymentPolling(3000);
     return t.status();
   });
@@ -309,7 +426,11 @@ function setupTournamentIPC() {
     try {
       return fs.readdirSync(gamesDir)
         .filter(f => f.endsWith('.json'))
-        .map(f => JSON.parse(fs.readFileSync(path.join(gamesDir, f), 'utf8')));
+        .map(f => {
+          const game = JSON.parse(fs.readFileSync(path.join(gamesDir, f), 'utf8'));
+          game.romAvailable = !!_findRom(game.rom_name);
+          return game;
+        });
     } catch (e) {
       console.error('[Games] Failed to load:', e);
       return [];
@@ -324,22 +445,105 @@ function _wireTournamentToRenderer(tm) {
     if (mainWindow) mainWindow.webContents.send('tournament:event', { event, ...data });
   };
 
-  tm.on('invoice',      data => { console.log('[TM→UI] invoice', data); push('invoice', data); });
-  tm.on('player_paid',  data => { console.log('[TM→UI] player_paid', data); push('player_paid', data); });
-  tm.on('started',      data => { console.log('[TM→UI] started', data); push('started', data); });
-  tm.on('scores',       data => { console.log('[TM→UI] scores', data); push('scores', data); });
-  tm.on('winner',       data => { console.log('[TM→UI] winner', data); push('winner', data); });
-  tm.on('complete',     data => { console.log('[TM→UI] complete', data); push('complete', data); });
-  tm.on('error',        err => { console.error('[TM→UI] error', err); push('error', { message: err.message }); });
+  tm.on('invoice',           data => { console.log('[TM→UI] invoice', data);       push('invoice', data); });
+  tm.on('player_paid',       data => { console.log('[TM→UI] player_paid', data);  push('player_paid', data); });
+  tm.on('started',           data => { console.log('[TM→UI] started', data);      push('started', data); });
+  tm.on('scores',            data => { console.log('[TM→UI] scores', data);       push('scores', data); });
+  tm.on('winner',            data => { console.log('[TM→UI] winner', data);       push('winner', data); });
+  tm.on('settling',          data => { console.log('[TM→UI] settling', data);     push('settling', data); });
+  tm.on('complete',          data => { console.log('[TM→UI] complete', data);     push('complete', data); });
+  tm.on('cancelled',         data => { console.log('[TM→UI] cancelled', data);    push('cancelled', data); });
+  tm.on('registration_closed', data => { push('registration_closed', data); });
+  tm.on('chain_escrow',      data => { push('chain_escrow', data); });
+  tm.on('error',             err  => { console.error('[TM→UI] error', err);       push('error', { message: err.message }); });
+}
+
+// ── ROM discovery ──────────────────────────────────────────────────────────
+
+function _romSearchDirs() {
+  const home = require('os').homedir();
+  const dirs = [];
+  // User-configured dir first
+  if (CONFIG.romsDir) dirs.push(CONFIG.romsDir);
+  // Common locations
+  const candidates = [
+    path.join(home, 'roms'),
+    path.join(home, 'ROMs'),
+    path.join(home, 'Downloads'),
+    path.join(home, 'Desktop'),
+    '/media/' + (process.env.USER || 'phill'),
+    '/mnt',
+  ];
+  for (const d of candidates) {
+    try {
+      // Also search one level of subdirs (roms/snes/, roms/nes/, etc.)
+      if (fs.existsSync(d)) {
+        dirs.push(d);
+        for (const sub of fs.readdirSync(d)) {
+          const full = path.join(d, sub);
+          try { if (fs.statSync(full).isDirectory()) dirs.push(full); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+  return [...new Set(dirs)];
+}
+
+function _findRom(romName) {
+  if (!romName) return null;
+  // Base name without extension for fuzzy matching
+  const baseName = path.basename(romName, path.extname(romName)).toLowerCase();
+  const compressedExts = ['.7z', '.zip', '.gz'];
+
+  for (const dir of _romSearchDirs()) {
+    // Exact match
+    const exact = path.join(dir, romName);
+    try { if (fs.existsSync(exact)) return exact; } catch (_) {}
+
+    // Fuzzy: scan dir for files whose stem starts with baseName
+    try {
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        const fBase = path.basename(f, path.extname(f)).toLowerCase();
+        const fExt  = path.extname(f).toLowerCase();
+        const allExts = [path.extname(romName).toLowerCase(), ...compressedExts];
+        if (fBase.startsWith(baseName) && allExts.includes(fExt)) {
+          return path.join(dir, f);
+        }
+      }
+    } catch (_) {}
+  }
+  return null;
 }
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
+
+function _initAgentWallet(privateKey) {
+  const { AgentWallet } = require('./agent-wallet');
+  return new AgentWallet({ privateKey, rpcUrl: CONFIG.ckbRpcUrl });
+}
+
+function _initChainStore(wallet) {
+  const { ChainStore } = require('./chain-store');
+  return new ChainStore({ wallet, rpcUrl: CONFIG.ckbRpcUrl });
+}
 
 app.whenReady().then(async () => {
   // Init Fiber client
   fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode });
   const alive = await fiberClient.isAlive();
   console.log(`[Main] Fiber node at ${CONFIG.fiberRpcUrl}: ${alive ? '✅ connected' : '❌ unreachable'}`);
+
+  // Load stored CKB agent key (encrypted)
+  const storedKey = loadSecureKey('ckbPrivateKey');
+  if (storedKey) {
+    try {
+      agentWallet = _initAgentWallet(storedKey);
+      console.log(`[Main] Agent wallet loaded: ${agentWallet.address}`);
+    } catch (e) {
+      console.warn('[Main] Failed to load agent wallet:', e.message);
+    }
+  }
 
   // Start game server (HMI WebSocket bridge)
   gameServer = new GameServer({
@@ -349,7 +553,10 @@ app.whenReady().then(async () => {
   await gameServer.start();
 
   // Tournament manager → wire events to HMI
-  tournamentManager = new TournamentManager({ fiberRpc: CONFIG.fiberRpcUrl });
+  tournamentManager = new TournamentManager({
+    fiberRpc: CONFIG.fiberRpcUrl,
+    wallet: agentWallet || undefined,
+  });
   _wireTournamentToHMI(tournamentManager);
 
   // Setup IPC

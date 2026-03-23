@@ -2,7 +2,7 @@
   "id": "altered-beast-md",
   "title": "Altered Beast",
   "platform": "megadrive",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "rom": "~/roms/megadrive/Altered Beast (USA, Europe).zip",
   "tournament_format": "survival",
   "description": "Co-op arcade survival — track lives and progress through levels. Most levels cleared wins.",

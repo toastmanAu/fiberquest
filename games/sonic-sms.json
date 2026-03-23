@@ -3,7 +3,7 @@
   "name": "Sonic the Hedgehog (Master System)",
   "system": "mastersystem",
   "rom_name": "Sonic the Hedgehog (USA, Europe).sms",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "8-bit Sonic on SMS. Score attack or fastest zone clear.",
 
   "ram_addresses": {

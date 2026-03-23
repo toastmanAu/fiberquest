@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; img-src 'self' data:">
 <title>FiberQuest Tournament Manager</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -356,12 +356,123 @@
   .menu-item:hover .menu-sub { color: var(--green); opacity: 0.7; }
 
   /* ─────────────────────────────────────────────────────────
-     VIEW 1: SETUP
+     VIEW 1: SETUP / BROWSE TABS
   ───────────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: var(--border-w) solid var(--border);
+    margin-bottom: var(--sp-md);
+    width: 100%;
+    max-width: clamp(320px, 52vw, 800px);
+  }
+  .tab-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    padding: var(--sp-sm) var(--sp-md);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
+
+  .tab-panel { display: none; width: 100%; }
+  .tab-panel.active { display: flex; flex-direction: column; align-items: center; }
+
   .setup-form {
     width: 100%;
     max-width: clamp(320px, 36vw, 600px);
   }
+
+  /* Browse panel */
+  .browse-panel {
+    width: 100%;
+    max-width: clamp(320px, 52vw, 800px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+  }
+  .browse-controls {
+    display: flex;
+    gap: var(--sp-sm);
+    align-items: center;
+  }
+  .browse-search {
+    flex: 1;
+    background: var(--surface);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    padding: var(--sp-xs) var(--sp-sm);
+    outline: none;
+  }
+  .browse-search:focus { border-color: var(--cyan); }
+  .browse-search::placeholder { color: var(--muted); }
+
+  .filter-chips {
+    display: flex;
+    gap: var(--sp-xs);
+    flex-wrap: wrap;
+  }
+  .chip {
+    background: none;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    padding: 2px var(--sp-xs);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip.active { border-color: var(--cyan); color: var(--cyan); }
+
+  .t-card {
+    background: var(--surface);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--sp-sm);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .t-card:hover { border-color: var(--muted); }
+  .t-card.expanded { border-color: var(--cyan); }
+  .t-card-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+  }
+  .t-card-game {
+    flex: 1;
+    color: var(--text);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .t-state-dot { font-size: 10px; }
+  .t-card-detail {
+    display: none;
+    margin-top: var(--sp-sm);
+    border-top: 1px solid var(--border);
+    padding-top: var(--sp-sm);
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    line-height: 2;
+  }
+  .t-card.expanded .t-card-detail { display: block; }
+  .t-detail-label { color: var(--muted); }
+  .t-detail-val   { color: var(--text); }
+  .t-player-row   { display: flex; gap: var(--sp-sm); align-items: center; padding: 2px 0; }
+  .t-peer-id      { color: var(--cyan); font-size: calc(var(--fs-xs) - 1px); word-break: break-all; }
 
   /* ─────────────────────────────────────────────────────────
      VIEW 2: WAITING ROOM
@@ -372,10 +483,10 @@
 
   .player-slots {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(clamp(140px, 16vw, 240px), 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--sp-md);
     width: 100%;
-    max-width: clamp(400px, 70vw, 900px);
+    max-width: clamp(500px, 80vw, 960px);
     margin: var(--sp-md) 0;
   }
   .player-slot {
@@ -426,32 +537,46 @@
 
   .invoice-box {
     background: var(--dark);
-    border: var(--border-w) solid var(--border);
+    border: var(--border-w) solid var(--cyan);
     border-radius: var(--radius);
     padding: var(--sp-xs);
     margin-top: var(--sp-xs);
-    max-height: clamp(70px, 8vh, 120px);
-    overflow: hidden;
+    text-align: center;
+  }
+  .invoice-qr {
+    width: clamp(100px, 12vw, 180px);
+    height: clamp(100px, 12vw, 180px);
+    image-rendering: pixelated;
+    border-radius: var(--radius);
+    margin-bottom: var(--sp-xs);
   }
   .invoice-text {
-    font-size: clamp(5px, 0.4vw, 9px);
+    font-size: clamp(8px, 0.55vw, 11px);
     color: var(--cyan);
     font-family: monospace;
     word-break: break-all;
     white-space: pre-wrap;
+    max-height: clamp(50px, 6vh, 80px);
+    overflow-y: auto;
     margin-bottom: var(--sp-xs);
+    line-height: 1.4;
+    opacity: 0.75;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cyan) var(--dark);
   }
   .invoice-copy {
     width: 100%;
-    font-size: var(--fs-xs);
-    padding: var(--sp-xs);
-    background: transparent;
-    border: var(--border-w) solid var(--cyan);
-    color: var(--cyan);
+    font-size: var(--fs-sm);
+    padding: var(--btn-pad-v);
+    background: var(--cyan);
+    border: none;
+    color: var(--bg);
     cursor: pointer;
     font-family: 'Press Start 2P', monospace;
     border-radius: var(--radius);
+    letter-spacing: 0.05em;
   }
+  .invoice-copy:hover { background: #fff; }
 
   /* ─────────────────────────────────────────────────────────
      VIEW 3: LIVE
@@ -560,6 +685,32 @@
   .input-hint { font-size: clamp(6px, 0.45vw, 11px); color: var(--muted); margin-top: var(--sp-xs); }
 
   /* ─────────────────────────────────────────────────────────
+     VIEW X: SETTLING
+  ───────────────────────────────────────────────────────── */
+  .settling-countdown {
+    font-size: var(--fs-2xl);
+    color: var(--yellow);
+    text-shadow: 0 0 20px var(--yellow);
+    margin: var(--sp-md) 0;
+    text-align: center;
+    min-width: 3ch;
+  }
+  .settling-label {
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: 0.15em;
+  }
+  .settling-tx {
+    margin-top: var(--sp-md);
+    font-size: var(--fs-xs);
+    color: var(--green);
+    text-align: center;
+    word-break: break-all;
+    max-width: clamp(300px, 50vw, 600px);
+  }
+
+  /* ─────────────────────────────────────────────────────────
      RESPONSIVE OVERRIDES
   ───────────────────────────────────────────────────────── */
 
@@ -625,77 +776,130 @@
         <span class="menu-icon">⚙️</span>
         <div class="menu-text">
           SETTINGS
-          <div class="menu-sub">Configure nodes, RetroArch, defaults</div>
+          <div class="menu-sub">Configure nodes, RetroArch, agent key</div>
         </div>
       </button>
     </nav>
+
   </div>
 
-  <!-- ── VIEW 1: SETUP ────────────────────────────────────── -->
+  <!-- ── VIEW 1: SETUP / BROWSE ───────────────────────────── -->
   <div class="view" id="view-setup">
-    <div class="setup-form">
-      <div class="view-title green">SETUP TOURNAMENT</div>
 
-      <div class="form-group">
-        <label class="form-label">Game</label>
-        <select class="form-control" id="gameSelect" onchange="updateModes()">
-          <option>Loading games...</option>
-        </select>
-      </div>
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-create-btn" onclick="switchSetupTab('create')">🎮 CREATE</button>
+      <button class="tab-btn"        id="tab-browse-btn" onclick="switchSetupTab('browse')">◈ BROWSE CHAIN</button>
+    </div>
 
-      <div class="form-group">
-        <label class="form-label">Tournament Mode</label>
-        <select class="form-control" id="modeSelect">
-          <option>Select game first</option>
-        </select>
-      </div>
-
-      <div class="form-row">
+    <!-- CREATE tab -->
+    <div class="tab-panel active" id="tab-create">
+      <div class="setup-form">
         <div class="form-group">
-          <label class="form-label">Entry Fee (CKB)</label>
-          <input type="number" class="form-control" id="entryFee" value="10" min="1" max="1000">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Players</label>
-          <select class="form-control" id="playerCount">
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
+          <label class="form-label">Game</label>
+          <select class="form-control" id="gameSelect" onchange="updateModes()">
+            <option>Loading games...</option>
           </select>
         </div>
-      </div>
 
-      <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Time Limit (min)</label>
-          <input type="number" class="form-control" id="timeLimit" value="10" min="1" max="60">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Currency</label>
-          <select class="form-control" id="currency">
-            <option value="Fibt">Fibt (testnet)</option>
-            <option value="Fibb">Fibb (mainnet)</option>
+          <label class="form-label">Tournament Mode</label>
+          <select class="form-control" id="modeSelect">
+            <option>Select game first</option>
           </select>
         </div>
-      </div>
 
-      <div style="display:flex;gap:var(--sp-sm);margin-top:var(--sp-md)">
-        <button class="btn muted" onclick="goHome()">← BACK</button>
-        <button id="launchBtn" class="btn muted" style="display:none" onclick="launchGame()">▶ LAUNCH GAME</button>
-        <button class="btn" style="flex:1" onclick="startSetup()">CREATE TOURNAMENT →</button>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Entry Fee (CKB)</label>
+            <input type="number" class="form-control" id="entryFee" value="10" min="1" max="1000">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Max Players</label>
+            <select class="form-control" id="playerCount">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Min Players</label>
+            <input type="number" class="form-control" id="minPlayers" value="2" min="1" max="8">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Reg Window (min)</label>
+            <input type="number" class="form-control" id="regWindow" value="10" min="1" max="60">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Time Limit (min)</label>
+            <input type="number" class="form-control" id="timeLimit" value="10" min="1" max="60">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Currency</label>
+            <select class="form-control" id="currency">
+              <option value="Fibt">Fibt (testnet)</option>
+              <option value="Fibb">Fibb (mainnet)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:var(--sp-sm);margin-top:var(--sp-md)">
+          <button class="btn muted" onclick="goHome()">← BACK</button>
+          <button id="launchBtn" class="btn muted" style="display:none" onclick="launchGame()">▶ LAUNCH GAME</button>
+          <button id="createBtn" class="btn" style="flex:1" onclick="startSetup()">CREATE TOURNAMENT →</button>
+        </div>
       </div>
     </div>
+
+    <!-- BROWSE tab -->
+    <div class="tab-panel" id="tab-browse">
+      <div class="browse-panel">
+
+        <div class="browse-controls">
+          <input class="browse-search" id="browse-search" type="text"
+                 placeholder="Search game, ID, state…" oninput="renderBrowseList()">
+          <button class="btn muted" style="white-space:nowrap" onclick="browseRefresh(true)">↺ REFRESH</button>
+        </div>
+
+        <div class="filter-chips" id="browse-filters">
+          <button class="chip active" data-filter="ALL"       onclick="setBrowseFilter('ALL')">ALL</button>
+          <button class="chip"        data-filter="ESCROW"    onclick="setBrowseFilter('ESCROW')">OPEN</button>
+          <button class="chip"        data-filter="ACTIVE"    onclick="setBrowseFilter('ACTIVE')">LIVE</button>
+          <button class="chip"        data-filter="SETTLING"  onclick="setBrowseFilter('SETTLING')">SETTLING</button>
+          <button class="chip"        data-filter="COMPLETE"  onclick="setBrowseFilter('COMPLETE')">COMPLETE</button>
+          <button class="chip"        data-filter="CANCELLED" onclick="setBrowseFilter('CANCELLED')">CANCELLED</button>
+        </div>
+
+        <div id="browse-status" style="font-size:var(--fs-xs);color:var(--muted)"></div>
+        <div id="browse-list"   style="display:flex;flex-direction:column;gap:var(--sp-xs);overflow-y:auto;max-height:55vh"></div>
+      </div>
+    </div>
+
   </div>
 
   <!-- ── VIEW 2: WAITING ROOM ─────────────────────────────── -->
-  <div class="view" id="view-waiting">
+  <div class="view" id="view-waiting" style="justify-content:flex-start;padding-top:var(--sp-md)">
     <div class="waiting-header">
       <div class="view-title green">WAITING ROOM</div>
       <div class="tournament-id" id="tourId"></div>
       <div class="status-text" id="waitStatus"></div>
     </div>
     <div class="player-slots" id="playerSlots"></div>
-    <button class="btn muted" onclick="goHome()">← CANCEL</button>
+    <button class="btn muted" style="margin-top:var(--sp-sm)" onclick="goHome()">← CANCEL</button>
+  </div>
+
+  <!-- ── CONTROLLER ASSIGNMENT MODAL ──────────────────────── -->
+  <div id="controllerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:999;display:none;align-items:center;justify-content:center;flex-direction:column;gap:var(--sp-lg)">
+    <div style="font-size:var(--fs-xl);color:var(--cyan);text-align:center" id="ctrlPromptName"></div>
+    <div style="font-size:var(--fs-md);color:var(--text);text-align:center">PRESS ANY BUTTON ON YOUR CONTROLLER</div>
+    <div style="font-size:var(--fs-2xl);animation:blink 1s step-end infinite">🎮</div>
+    <div style="font-size:var(--fs-xs);color:var(--muted)" id="ctrlDetected"></div>
   </div>
 
   <!-- ── VIEW 3: LIVE ──────────────────────────────────────── -->
@@ -728,6 +932,15 @@
     </div>
   </div>
 
+  <!-- ── VIEW X: SETTLING ────────────────────────────────── -->
+  <div class="view" id="view-settling">
+    <div class="view-title cyan">SETTLING...</div>
+    <div class="settling-label">FINALISING RESULT — PAYOUT FIRES AUTOMATICALLY</div>
+    <div class="settling-countdown" id="settling-count">—</div>
+    <div class="settling-label">SECONDS REMAINING</div>
+    <div id="settling-tx" class="settling-tx" style="display:none"></div>
+  </div>
+
   <!-- ── VIEW 4: RESULTS ──────────────────────────────────── -->
   <div class="view" id="view-results">
     <div class="results-header">🏆 WINNER!</div>
@@ -748,7 +961,7 @@
         <div class="form-group">
           <label class="form-label">RPC URL</label>
           <input type="text" class="form-control" id="cfg-fiberRpcUrl" placeholder="http://127.0.0.1:8227">
-          <div class="input-hint">Tunnel: ssh -f -N -L 8227:127.0.0.1:8226 user@host</div>
+          <div class="input-hint">Tunnel: ssh -f -N -L 18226:127.0.0.1:8226 user@host</div>
         </div>
       </div>
 
@@ -802,6 +1015,55 @@
               <option value="Fibt">Fibt (testnet)</option>
               <option value="Fibb">Fibb (mainnet)</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">🔑 On-Chain Agent</div>
+        <div class="form-group">
+          <label class="form-label">CKB Private Key</label>
+          <div style="display:flex;gap:var(--sp-xs)">
+            <input type="password" class="form-control" id="cfg-ckbPrivateKey" placeholder="64-char hex — stored encrypted" style="flex:1">
+            <button class="btn muted" style="padding:var(--btn-pad-v) var(--sp-sm);font-size:var(--fs-xs)" onclick="toggleKeyVisibility()">👁</button>
+          </div>
+          <div class="input-hint">Encrypted at rest via OS keychain. Powers escrow cells + chain state.</div>
+        </div>
+        <div id="agent-status-bar" style="display:none;margin-bottom:var(--sp-sm);padding:var(--sp-xs) var(--sp-sm);background:var(--dark);border:1px solid var(--border);border-radius:var(--radius);font-size:var(--fs-xs)">
+          <span style="color:var(--green)">● AGENT</span>
+          <span id="agent-addr" style="color:var(--muted);margin-left:var(--sp-sm)"></span>
+          <span id="agent-bal" style="color:var(--cyan);margin-left:var(--sp-sm)"></span>
+        </div>
+        <div style="display:flex;gap:var(--sp-xs)">
+          <button class="btn" style="font-size:var(--fs-xs)" onclick="saveAgentKey()">SAVE KEY</button>
+          <button class="btn muted" style="font-size:var(--fs-xs)" onclick="clearAgentKey()">CLEAR KEY</button>
+        </div>
+        <div class="form-group" style="margin-top:var(--sp-sm)">
+          <label class="form-label">CKB RPC URL</label>
+          <input type="text" class="form-control" id="cfg-ckbRpcUrl" placeholder="https://testnet.ckbapp.dev/">
+          <div class="input-hint">Public testnet, local node, or light client</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">⏱ Tournament Timing</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Min Players</label>
+            <input type="number" class="form-control" id="cfg-defaultMinPlayers" placeholder="2" min="1" max="8">
+            <div class="input-hint">Below this — refund &amp; cancel</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Registration (min)</label>
+            <input type="number" class="form-control" id="cfg-defaultRegistrationMinutes" placeholder="10" min="1" max="60">
+            <div class="input-hint">Window for players to enter</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Settlement Buffer (sec)</label>
+            <input type="number" class="form-control" id="cfg-settlementBufferSec" placeholder="30" min="5" max="300">
+            <div class="input-hint">Delay after game ends before payout</div>
           </div>
         </div>
       </div>
@@ -869,6 +1131,7 @@
 let currentTournament = null;
 let gamesList = [];
 let timerInterval = null;
+let settlingInterval = null;
 let retroarchIsLocal = false;
 
 // ── First-run setup ────────────────────────────────────────
@@ -959,6 +1222,11 @@ async function init() {
   checkServices();
   setInterval(checkServices, 5000);
 
+  // Agent status + chain scan
+  await refreshAgentStatus();
+  refreshChainTournaments();
+  setInterval(refreshChainTournaments, 30000);
+
   // First-run: check retroarch + roms dir on first launch
   const seen = localStorage.getItem('fq-firstrun-done');
   if (!seen) { await runFirstRunCheck(cfg); localStorage.setItem('fq-firstrun-done', '1'); }
@@ -981,11 +1249,22 @@ function setSvc(id, state, detail) {
 }
 
 async function checkServices() {
+  let fiberOk = false;
   try {
     const info = await window.fiberquest.fiber.nodeInfo();
     const nodeId = info?.node_id || '';
     setSvc('fiber', 'online', nodeId ? nodeId.slice(0,10) + '…' : 'connected');
+    fiberOk = true;
   } catch { setSvc('fiber', 'offline', 'unreachable'); }
+
+  // Update CREATE button state based on payment availability
+  const agentReady = document.getElementById('agent-status-bar')?.style.display !== 'none';
+  const createBtn  = document.getElementById('createBtn');
+  if (createBtn) {
+    const paymentReady = fiberOk || agentReady;
+    createBtn.disabled = !paymentReady;
+    createBtn.title    = paymentReady ? '' : 'Connect Fiber node or configure agent key first';
+  }
 
   try {
     const cs = await window.fiberquest.health.channelSummary();
@@ -1006,7 +1285,15 @@ async function checkServices() {
 function populateGameSelect() {
   const sel = document.getElementById('gameSelect');
   if (!gamesList.length) { sel.innerHTML = '<option>No games found</option>'; return; }
-  sel.innerHTML = gamesList.map(g => `<option value="${g.id}">${g.name} (${g.system})</option>`).join('');
+  const available = gamesList.filter(g => g.romAvailable);
+  const unavailable = gamesList.filter(g => !g.romAvailable);
+  sel.innerHTML = [
+    ...available.map(g => `<option value="${g.id}">${g.name} (${g.system})</option>`),
+    unavailable.length ? `<option disabled>── ROM not found ──</option>` : '',
+    ...unavailable.map(g => `<option value="${g.id}" disabled style="color:#444">${g.name} (${g.system})</option>`),
+  ].join('');
+  // Default to first available
+  if (available.length) sel.value = available[0].id;
   updateModes();
 }
 function updateModes() {
@@ -1047,21 +1334,37 @@ async function launchGame() {
   btn.disabled = false;
 }
 function applyDefaultsToSetup(cfg) {
-  if (cfg.defaultEntryFee)  document.getElementById('entryFee').value   = cfg.defaultEntryFee;
-  if (cfg.defaultPlayers)   document.getElementById('playerCount').value = cfg.defaultPlayers;
-  if (cfg.defaultTimeLimit) document.getElementById('timeLimit').value   = cfg.defaultTimeLimit;
-  if (cfg.defaultCurrency)  document.getElementById('currency').value    = cfg.defaultCurrency;
+  if (cfg.defaultEntryFee)            document.getElementById('entryFee').value    = cfg.defaultEntryFee;
+  if (cfg.defaultPlayers)             document.getElementById('playerCount').value  = cfg.defaultPlayers;
+  if (cfg.defaultTimeLimit)           document.getElementById('timeLimit').value    = cfg.defaultTimeLimit;
+  if (cfg.defaultCurrency)            document.getElementById('currency').value     = cfg.defaultCurrency;
+  if (cfg.defaultMinPlayers)          document.getElementById('minPlayers').value   = cfg.defaultMinPlayers;
+  if (cfg.defaultRegistrationMinutes) document.getElementById('regWindow').value    = cfg.defaultRegistrationMinutes;
 }
 
 // ── View 1: Setup ─────────────────────────────────────────
 async function startSetup() {
+  // Guard: require at least Fiber or agent wallet to be available
+  const fiberOk    = document.getElementById('svc-fiber')?.classList.contains('online');
+  const retroOk    = document.getElementById('svc-retroarch')?.classList.contains('online');
+  const agentReady = document.getElementById('agent-status-bar')?.style.display !== 'none';
+
+  if (!fiberOk && !agentReady) {
+    alert('⚠️  No payment service available.\n\nEither connect your Fiber node (SSH tunnel) or configure an agent key in Settings to accept L1 JoyID payments.');
+    return;
+  }
+  if (!retroOk) {
+    if (!confirm('⚠️  RetroArch is offline — scores won\'t be tracked automatically.\n\nContinue anyway?')) return;
+  }
   const opts = {
-    gameId:           document.getElementById('gameSelect').value,
-    mode:             document.getElementById('modeSelect').value,
-    entryFee:         parseInt(document.getElementById('entryFee').value)    || 10,
-    players:          parseInt(document.getElementById('playerCount').value) || 2,
-    timeLimitMinutes: parseInt(document.getElementById('timeLimit').value)   || 10,
-    currency:         document.getElementById('currency').value,
+    gameId:               document.getElementById('gameSelect').value,
+    mode:                 document.getElementById('modeSelect').value,
+    entryFee:             parseInt(document.getElementById('entryFee').value)    || 10,
+    players:              parseInt(document.getElementById('playerCount').value) || 2,
+    minPlayers:           parseInt(document.getElementById('minPlayers').value)  || 2,
+    registrationMinutes:  parseInt(document.getElementById('regWindow').value)   || 10,
+    timeLimitMinutes:     parseInt(document.getElementById('timeLimit').value)   || 10,
+    currency:             document.getElementById('currency').value,
   };
   try {
     currentTournament = await window.fiberquest.tournament.create(opts);
@@ -1081,14 +1384,15 @@ function showWaitingRoom() {
       <button class="slot-button" onclick="addPlayer(${i})">ADD PLAYER</button>
       <div class="slot-status" id="status-${i}">Waiting...</div>
       <div class="invoice-box" id="invoice-${i}" style="display:none">
+        <img class="invoice-qr" id="invoiceQr-${i}" src="" alt="QR" style="display:none">
         <div class="invoice-text" id="invoiceText-${i}"></div>
-        <button class="invoice-copy" onclick="copyInvoice(${i})">COPY</button>
+        <button class="invoice-copy" onclick="copyInvoice(${i})">📋 COPY</button>
       </div>
     </div>`).join('');
   showView('view-waiting');
 }
 
-async function addPlayer(slotIndex) {
+async function addPlayer(slotIndex) {  // eslint-disable-line no-unused-vars
   const nameEl = document.getElementById(`name-${slotIndex}`);
   const name   = nameEl.value.trim();
   if (!name) { nameEl.focus(); return; }
@@ -1098,16 +1402,36 @@ async function addPlayer(slotIndex) {
 
   try {
     const result = await window.fiberquest.tournament.addPlayer(currentTournament.id, `player-${slotIndex}`, name);
-    document.getElementById(`status-${slotIndex}`).textContent = 'Invoice ready';
+    const uri = result.joyidUri || result.entryInvoice || '(invoice)';
+    const isJoyID = uri.startsWith('nervos:');
+    document.getElementById(`status-${slotIndex}`).textContent = isJoyID
+      ? 'Scan with JoyID to pay entry'
+      : 'Scan invoice to pay entry';
     document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
-    document.getElementById(`invoiceText-${slotIndex}`).textContent = result.entryInvoice || '(invoice)';
+    const invEl = document.getElementById(`invoiceText-${slotIndex}`);
+    invEl.textContent = uri;
+    invEl.dataset.full = uri;
+    // Generate QR code — hide raw text once QR loads
+    try {
+      const qrDataUrl = await window.fiberquest.qr.generate(uri);
+      const qrEl  = document.getElementById(`invoiceQr-${slotIndex}`);
+      const txtEl = document.getElementById(`invoiceText-${slotIndex}`);
+      qrEl.src = qrDataUrl;
+      qrEl.style.display = 'block';
+      txtEl.style.display = 'none';  // QR replaces text — copy button still works via data-full
+    } catch (e) {
+      console.warn('QR generation failed:', e.message);
+      // Leave text visible as fallback
+    }
     document.getElementById(`slot-${slotIndex}`).classList.add('active');
     nameEl.disabled = true;
   } catch {
     const st = document.getElementById(`status-${slotIndex}`);
-    st.textContent = 'Demo mode'; st.style.color = 'var(--yellow)';
+    st.textContent = 'Demo mode (no node)'; st.style.color = 'var(--yellow)';
     document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
-    document.getElementById(`invoiceText-${slotIndex}`).textContent = '⚡ No Fiber node — payment skipped';
+    const demoEl = document.getElementById(`invoiceText-${slotIndex}`);
+    demoEl.textContent = '⚡ Payment skipped — demo mode';
+    demoEl.dataset.full = '';
     document.getElementById(`slot-${slotIndex}`).classList.add('active');
     nameEl.disabled = true; btn.textContent = 'ADDED';
     try { await window.fiberquest.tournament.markPaid(currentTournament.id, `player-${slotIndex}`); } catch {}
@@ -1115,7 +1439,13 @@ async function addPlayer(slotIndex) {
 }
 
 function copyInvoice(i) {
-  navigator.clipboard.writeText(document.getElementById(`invoiceText-${i}`).textContent);
+  const el = document.getElementById(`invoiceText-${i}`);
+  const text = el.dataset.full || el.textContent;
+  navigator.clipboard.writeText(text);
+  const btn = el.closest('.invoice-box').querySelector('.invoice-copy');
+  const orig = btn.textContent;
+  btn.textContent = '✓ COPIED';
+  setTimeout(() => { btn.textContent = orig; }, 1500);
 }
 
 // ── View 3: Live ──────────────────────────────────────────
@@ -1163,7 +1493,8 @@ function showResults(event) {
 // ── View 5: Settings ──────────────────────────────────────
 function applyConfigToForm(cfg) {
   const ids = ['fiberRpcUrl','retroarchHost','retroarchUdp','gameServerPort',
-               'defaultEntryFee','defaultPlayers','defaultTimeLimit','defaultCurrency'];
+               'defaultEntryFee','defaultPlayers','defaultTimeLimit','defaultCurrency',
+               'ckbRpcUrl','defaultMinPlayers','defaultRegistrationMinutes','settlementBufferSec'];
   ids.forEach(k => {
     const el = document.getElementById('cfg-' + k);
     if (el && cfg[k] !== undefined) el.value = cfg[k];
@@ -1177,6 +1508,10 @@ async function saveSettings() {
     retroarchUdp: g('retroarchUdp','int'), gameServerPort: g('gameServerPort','int'),
     defaultEntryFee: g('defaultEntryFee','int'), defaultPlayers: g('defaultPlayers','int'),
     defaultTimeLimit: g('defaultTimeLimit','int'), defaultCurrency: g('defaultCurrency'),
+    ckbRpcUrl: g('ckbRpcUrl'),
+    defaultMinPlayers: g('defaultMinPlayers','int'),
+    defaultRegistrationMinutes: g('defaultRegistrationMinutes','int'),
+    settlementBufferSec: g('settlementBufferSec','int'),
   };
   try {
     await window.fiberquest.config.save(updates);
@@ -1197,22 +1532,92 @@ function flash(id, msg) {
   setTimeout(() => { el.textContent = ''; }, 3000);
 }
 
+// ── Controller assignment ──────────────────────────────────
+async function runControllerAssignment() {
+  const t = currentTournament;
+  if (!t) return;
+  const players = t.players || [];
+  const modal = document.getElementById('controllerModal');
+  const promptEl = document.getElementById('ctrlPromptName');
+  const detectedEl = document.getElementById('ctrlDetected');
+  const controllerMap = {};
+  const usedPorts = new Set();
+
+  modal.style.display = 'flex';
+
+  for (const player of players) {
+    promptEl.textContent = `${player.name.toUpperCase()}`;
+    detectedEl.textContent = '';
+    // Show in RetroArch OSD too
+    window.fiberquest.retroarch.showMsg(`${player.name} - press your controller button!`).catch(() => {});
+
+    const port = await waitForUniqueButtonPress(usedPorts);
+    usedPorts.add(port);
+    controllerMap[player.id] = port;
+    detectedEl.textContent = `✅ ${player.name} → Port ${port + 1}`;
+    window.fiberquest.retroarch.showMsg(`${player.name} confirmed on Port ${port + 1}`).catch(() => {});
+    await new Promise(r => setTimeout(r, 800)); // brief confirmation pause
+  }
+
+  modal.style.display = 'none';
+  await window.fiberquest.controllerMap.set(t.id, controllerMap);
+  console.log('[Controller] Map set:', controllerMap);
+}
+
+function waitForUniqueButtonPress(excludePorts) {
+  return new Promise(resolve => {
+    // Snapshot current button states to avoid stale presses
+    const baseline = {};
+    const sample = navigator.getGamepads();
+    for (let i = 0; i < sample.length; i++) {
+      if (sample[i]) baseline[i] = sample[i].buttons.map(b => b.pressed);
+    }
+
+    function poll() {
+      const gamepads = navigator.getGamepads();
+      for (let i = 0; i < gamepads.length; i++) {
+        const gp = gamepads[i];
+        if (!gp || excludePorts.has(i)) continue;
+        for (let b = 0; b < gp.buttons.length; b++) {
+          const wasPressed = baseline[i]?.[b] ?? false;
+          if (gp.buttons[b].pressed && !wasPressed) {
+            return resolve(i);
+          }
+        }
+      }
+      requestAnimationFrame(poll);
+    }
+    requestAnimationFrame(poll);
+  });
+}
+
 // ── Tournament events ─────────────────────────────────────
 function handleTournamentEvent(ev) {
   switch (ev.event) {
     case 'started': showLive(ev); break;
     case 'player_paid': {
-      // Find slot by playerId and mark as PAID
       const players = currentTournament?.players || [];
       const idx = players.findIndex(p => p.id === ev.playerId);
       const slotIdx = idx >= 0 ? idx : parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`);
       if (st) { st.textContent = '✅ PAID'; st.style.color = 'var(--green)'; }
-      // Update waiting status
-      const paid = (currentTournament?.players || []).filter(p => p.paid).length + 1;
+      // mark locally
+      if (players[slotIdx]) players[slotIdx].paid = true;
+      const paidCount = players.filter(p => p.paid).length;
       const need = currentTournament?.maxPlayers || 2;
       const ws = document.getElementById('waitStatus');
-      if (ws) ws.textContent = paid >= need ? 'All paid — starting...' : `${paid}/${need} paid, waiting...`;
+      if (ws) ws.textContent = paidCount >= need ? 'All paid — assign controllers...' : `${paidCount}/${need} paid, waiting...`;
+      if (paidCount >= need) {
+        // Auto-launch RetroArch with the correct game
+        window.fiberquest.retroarch.isLocal().then(isLocal => {
+          if (isLocal && currentTournament?.gameId) {
+            window.fiberquest.retroarch.launch(currentTournament.gameId)
+              .then(r => { if (!r.ok) console.warn('[AutoLaunch]', r.reason); })
+              .catch(e => console.warn('[AutoLaunch]', e.message));
+          }
+        });
+        runControllerAssignment();
+      }
       break;
     }
     case 'scores':
@@ -1224,10 +1629,223 @@ function handleTournamentEvent(ev) {
         });
       }
       break;
-    case 'complete': showResults(ev); break;
+    case 'settling': showSettling(ev); break;
+    case 'cancelled': {
+      if (timerInterval)    { clearInterval(timerInterval);   timerInterval   = null; }
+      if (settlingInterval) { clearInterval(settlingInterval); settlingInterval = null; }
+      const ws2 = document.getElementById('waitStatus');
+      if (ws2) { ws2.textContent = 'Tournament cancelled — refunding'; ws2.style.color = 'var(--red)'; }
+      setTimeout(goHome, 3000);
+      break;
+    }
+    case 'complete':
+      if (settlingInterval) { clearInterval(settlingInterval); settlingInterval = null; }
+      showResults(ev);
+      break;
     case 'error': console.error('Tournament error:', ev.message); break;
   }
 }
+
+// ── View X: Settling ──────────────────────────────────────
+function showSettling(ev) {
+  const bufSec = ev.bufferSec || 30;
+  let remaining = bufSec;
+  const countEl = document.getElementById('settling-count');
+  const txEl    = document.getElementById('settling-tx');
+  txEl.style.display = 'none';
+  if (countEl) countEl.textContent = remaining;
+  if (timerInterval)    { clearInterval(timerInterval);   timerInterval   = null; }
+  if (settlingInterval) { clearInterval(settlingInterval); settlingInterval = null; }
+  settlingInterval = setInterval(() => {
+    remaining--;
+    const el = document.getElementById('settling-count');
+    if (el) el.textContent = remaining > 0 ? remaining : '⚡';
+    if (remaining <= 0) { clearInterval(settlingInterval); settlingInterval = null; }
+  }, 1000);
+  showView('view-settling');
+}
+
+// ── Agent key ──────────────────────────────────────────────
+function toggleKeyVisibility() {
+  const inp = document.getElementById('cfg-ckbPrivateKey');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+async function refreshAgentStatus() {
+  try {
+    const st  = await window.fiberquest.agent.status();
+    const bar = document.getElementById('agent-status-bar');
+    if (st.active) {
+      bar.style.display = 'block';
+      const addr = st.address || '';
+      document.getElementById('agent-addr').textContent = addr ? addr.slice(0, 20) + '…' : '—';
+      document.getElementById('agent-bal').textContent  = st.balanceCkb != null ? st.balanceCkb.toFixed(2) + ' CKB' : '';
+    } else {
+      bar.style.display = 'none';
+    }
+  } catch {}
+}
+
+async function saveAgentKey() {
+  const key = document.getElementById('cfg-ckbPrivateKey').value.trim();
+  if (!key) { flash('saveMsg', '❌ Enter a private key first'); return; }
+  try {
+    const result = await window.fiberquest.agent.setKey(key);
+    if (result.ok) {
+      document.getElementById('cfg-ckbPrivateKey').value = '';
+      await refreshAgentStatus();
+      flash('saveMsg', '✅ Agent key saved & encrypted');
+    } else {
+      flash('saveMsg', '❌ ' + (result.error || 'Failed'));
+    }
+  } catch (e) { flash('saveMsg', '❌ ' + e.message); }
+}
+
+async function clearAgentKey() {
+  if (!confirm('Clear the stored CKB private key?')) return;
+  try {
+    await window.fiberquest.agent.clearKey();
+    document.getElementById('agent-status-bar').style.display = 'none';
+    flash('saveMsg', 'Agent key cleared');
+  } catch (e) { flash('saveMsg', '❌ ' + e.message); }
+}
+
+// ── Browse / chain scan ───────────────────────────────────
+
+// Lightweight in-memory tournament cache
+const _browseCache = { tournaments: [], lastFetch: 0, fetching: false };
+let   _browseFilter = 'ALL';
+
+const _stateColor = s => ({
+  ESCROW:    'var(--green)',
+  FUNDING:   'var(--green)',
+  ACTIVE:    'var(--yellow)',
+  SETTLING:  'var(--red)',
+  COMPLETE:  'var(--muted)',
+  CANCELLED: 'var(--muted)',
+})[s] || 'var(--muted)';
+
+const _stateLabel = s => ({
+  ESCROW:    'OPEN',
+  FUNDING:   'FUNDING',
+  ACTIVE:    'LIVE',
+  SETTLING:  'SETTLING',
+  COMPLETE:  'DONE',
+  CANCELLED: 'CANCELLED',
+})[s] || s;
+
+function _relTime(ms) {
+  if (!ms) return '—';
+  const d = Date.now() - ms;
+  if (d < 60000)   return `${Math.floor(d/1000)}s ago`;
+  if (d < 3600000) return `${Math.floor(d/60000)}m ago`;
+  if (d < 86400000) return `${Math.floor(d/3600000)}h ago`;
+  return `${Math.floor(d/86400000)}d ago`;
+}
+
+function switchSetupTab(tab) {
+  document.getElementById('tab-create').classList.toggle('active', tab === 'create');
+  document.getElementById('tab-browse').classList.toggle('active', tab === 'browse');
+  document.getElementById('tab-create-btn').classList.toggle('active', tab === 'create');
+  document.getElementById('tab-browse-btn').classList.toggle('active', tab === 'browse');
+  if (tab === 'browse') browseRefresh(false);
+}
+
+function setBrowseFilter(f) {
+  _browseFilter = f;
+  document.querySelectorAll('#browse-filters .chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.filter === f));
+  renderBrowseList();
+}
+
+async function browseRefresh(force = false) {
+  const CACHE_TTL = 30000; // 30s
+  if (_browseCache.fetching) return;
+  if (!force && _browseCache.lastFetch && Date.now() - _browseCache.lastFetch < CACHE_TTL) {
+    renderBrowseList(); return;
+  }
+  _browseCache.fetching = true;
+  document.getElementById('browse-status').textContent = 'Scanning chain…';
+  try {
+    const result = await window.fiberquest.chain.scan();
+    _browseCache.tournaments = result.tournaments || [];
+    _browseCache.lastFetch   = Date.now();
+    renderBrowseList();
+  } catch (e) {
+    document.getElementById('browse-status').textContent = `Scan failed: ${e.message}`;
+  } finally {
+    _browseCache.fetching = false;
+  }
+}
+
+function renderBrowseList() {
+  const list   = document.getElementById('browse-list');
+  const status = document.getElementById('browse-status');
+  const q      = (document.getElementById('browse-search')?.value || '').toLowerCase();
+
+  let ts = _browseCache.tournaments;
+
+  // Filter by state chip
+  if (_browseFilter !== 'ALL') ts = ts.filter(t => t.state === _browseFilter);
+
+  // Filter by search query (game, ID, mode)
+  if (q) ts = ts.filter(t =>
+    (t.gameId  || '').toLowerCase().includes(q) ||
+    (t.id      || '').toLowerCase().includes(q) ||
+    (t.modeId  || '').toLowerCase().includes(q) ||
+    (t.state   || '').toLowerCase().includes(q)
+  );
+
+  const age = _browseCache.lastFetch
+    ? `${ts.length} result${ts.length !== 1 ? 's' : ''} · fetched ${_relTime(_browseCache.lastFetch)}`
+    : '';
+  status.textContent = age;
+
+  if (!ts.length) {
+    list.innerHTML = `<div style="color:var(--muted);font-size:var(--fs-xs);padding:var(--sp-sm);text-align:center">
+      ${_browseCache.lastFetch ? 'No tournaments match' : 'No data — click REFRESH to scan chain'}
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = ts.map((t, i) => {
+    const paidCount  = (t.players || []).filter(p => p.paid).length;
+    const totalCount = (t.players || []).length;
+    const playerRows = (t.players || []).map(p => `
+      <div class="t-player-row">
+        <span style="color:${p.paid ? 'var(--green)' : 'var(--muted)'}">
+          ${p.paid ? '●' : '○'}
+        </span>
+        <span style="color:var(--text)">${p.name || p.id}</span>
+        ${p.fiberPeerId ? `<span class="t-peer-id">${p.fiberPeerId.slice(0,20)}…</span>` : ''}
+      </div>`).join('');
+
+    return `<div class="t-card" id="tcard-${i}" onclick="toggleTCard(${i})">
+      <div class="t-card-row">
+        <span class="t-state-dot" style="color:${_stateColor(t.state)}">●</span>
+        <span class="t-card-game">${t.gameId || '?'} · ${t.modeId || '?'}</span>
+        <span style="color:${_stateColor(t.state)};font-size:var(--fs-xs);white-space:nowrap">${_stateLabel(t.state)}</span>
+        <span style="color:var(--cyan);font-size:var(--fs-xs);white-space:nowrap">${t.entryFee || 0} CKB</span>
+      </div>
+      <div class="t-card-detail">
+        <div><span class="t-detail-label">ID: </span><span class="t-detail-val">${t.id || '—'}</span></div>
+        <div><span class="t-detail-label">Players: </span><span class="t-detail-val">${paidCount}/${t.maxPlayers || totalCount} paid</span></div>
+        <div><span class="t-detail-label">Prize pool: </span><span class="t-detail-val">${t.prizePool || paidCount * (t.entryFee || 0)} CKB</span></div>
+        <div><span class="t-detail-label">Created: </span><span class="t-detail-val">${_relTime(t.createdAt)}</span></div>
+        ${t.fiberPeerId ? `<div><span class="t-detail-label">Organizer node: </span><span class="t-peer-id">${t.fiberPeerId}</span></div>` : ''}
+        ${t.winner ? `<div><span class="t-detail-label">Winner: </span><span style="color:var(--yellow)">${t.winner}</span></div>` : ''}
+        ${playerRows ? `<div style="margin-top:var(--sp-xs);color:var(--muted)">PLAYERS</div>${playerRows}` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleTCard(i) {
+  document.getElementById(`tcard-${i}`)?.classList.toggle('expanded');
+}
+
+// Legacy — kept so any existing callers don't break
+async function refreshChainTournaments() { await browseRefresh(true); }
 
 // ── Update ticker ─────────────────────────────────────────
 function _ubSet(text, state) {

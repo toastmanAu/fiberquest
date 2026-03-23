@@ -2,7 +2,7 @@
   "id": "super-mario-bros-3-nes",
   "title": "Super Mario Bros. 3",
   "platform": "nes",
-  "core": "fceumm",
+  "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "rom": "~/roms/nes/Super Mario Bros. 3 (USA) (Rev A).zip",
   "tournament_format": "score_attack",
   "description": "Timed score attack — most points accumulated in a fixed time window wins.",

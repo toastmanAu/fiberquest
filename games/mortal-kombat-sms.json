@@ -3,7 +3,7 @@
   "name": "Mortal Kombat (Master System)",
   "system": "mastersystem",
   "rom_name": "Mortal Kombat (Europe, Brazil).sms",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "SMS port of MK. Surprisingly solid. HP tracking same concept as SNES version.",
 
   "ram_addresses": {

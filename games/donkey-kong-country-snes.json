@@ -2,7 +2,7 @@
   "id": "donkey-kong-country-snes",
   "title": "Donkey Kong Country",
   "platform": "snes",
-  "core": "snes9x",
+  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Donkey Kong Country (USA) (Rev 2).zip",
   "tournament_format": "race",
   "description": "Level race — first to complete a set of levels wins. Track lives as tiebreaker.",

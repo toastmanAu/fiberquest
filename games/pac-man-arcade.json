@@ -3,7 +3,7 @@
   "name": "Pac-Man",
   "system": "arcade",
   "rom_name": "puckman.zip",
-  "core": "fbneo",
+  "core": "/home/phill/.config/retroarch/cores/fbneo_libretro.so",
   "description": "The original arcade score attack. Everyone knows it. Pure skill — highest score wins.",
 
   "ram_addresses": {

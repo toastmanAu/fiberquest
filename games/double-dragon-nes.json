@@ -2,7 +2,7 @@
   "id": "double-dragon-nes",
   "title": "Double Dragon",
   "platform": "nes",
-  "core": "fceumm",
+  "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "rom": "~/roms/nes/Double Dragon (USA).zip",
   "tournament_format": "survival",
   "description": "Beat-em-up bracket — last player standing wins the round. P1 vs P2 head-to-head.",

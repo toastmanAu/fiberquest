@@ -1,6 +1,6 @@
 {
   "name": "fiberquest",
-  "version": "0.0.1-alpha",
+  "version": "0.1.0",
   "description": "Retro gaming tournament platform powered by Fiber Network micropayments",
   "author": {
     "name": "Wyltek",
@@ -8,20 +8,23 @@
   },
   "main": "src/main.js",
   "scripts": {
-    "start":         "electron .",
-    "dev":           "NODE_ENV=development electron .",
-    "server":        "node src/game-server.js",
-    "test:rpc":      "node scripts/test-rpc.js",
-    "build":         "electron-builder --linux",
-    "build:x64":     "electron-builder --linux --x64",
-    "build:arm64":   "electron-builder --linux --arm64",
-    "build:all":     "electron-builder --linux --x64 && electron-builder --linux --arm64",
-    "release":       "electron-builder --linux --publish always",
-    "release:x64":   "electron-builder --linux --x64  --publish always",
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "server": "node src/game-server.js",
+    "test:rpc": "node scripts/test-rpc.js",
+    "build": "electron-builder --linux",
+    "build:x64": "electron-builder --linux --x64",
+    "build:arm64": "electron-builder --linux --arm64",
+    "build:all": "electron-builder --linux --x64 && electron-builder --linux --arm64",
+    "release": "electron-builder --linux --publish always",
+    "release:x64": "electron-builder --linux --x64  --publish always",
     "release:arm64": "electron-builder --linux --arm64 --publish always"
   },
   "dependencies": {
+    "@nervosnetwork/ckb-sdk-core": "^0.109.5",
+    "@nervosnetwork/ckb-sdk-utils": "^0.109.5",
     "electron-updater": "^6.3.0",
+    "qrcode": "^1.5.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -41,7 +44,10 @@
       "!**/scripts/**"
     ],
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "build/icon.png",
       "category": "Game",
       "synopsis": "Retro gaming tournament platform with Fiber Network micropayments",
@@ -56,7 +62,7 @@
       "maintainer": "Wyltek <toastmanAu@users.noreply.github.com>",
       "depends": [],
       "afterInstall": "build/scripts/after-install.sh",
-      "afterRemove":  "build/scripts/after-remove.sh"
+      "afterRemove": "build/scripts/after-remove.sh"
     }
   }
 }

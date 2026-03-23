@@ -2,7 +2,7 @@
   "id": "sonic-the-hedgehog-md",
   "title": "Sonic the Hedgehog",
   "platform": "megadrive",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "rom": "~/roms/megadrive/Sonic The Hedgehog (USA, Europe).zip",
   "tournament_format": "score_attack",
   "description": "Score attack — most points after completing a fixed set of acts wins. Ring count contributes to score.",

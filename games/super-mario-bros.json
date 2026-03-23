@@ -1,7 +1,7 @@
 {
   "id": "super-mario-bros",
   "name": "Super Mario Bros.",
-  "core": "fceumm",
+  "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
   "notes": "NES. RAM addresses well-documented. Lives at 0x075A, world at 0x075F, level at 0x0760, coins at 0x075E, score bytes at 0x07DD-0x07E2 (BCD, 6 digits).",
 
   "addresses": {

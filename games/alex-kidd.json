@@ -3,7 +3,7 @@
   "name": "Alex Kidd in Miracle World",
   "system": "mastersystem",
   "rom_name": "Alex Kidd in Miracle World (USA, Europe, Brazil) (Rev 1).sms",
-  "core": "genesis_plus_gx",
+  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "Classic SMS platformer built into the console BIOS. Money/score and lives tracking.",
 
   "ram_addresses": {

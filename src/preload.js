@@ -45,6 +45,11 @@ contextBridge.exposeInMainWorld('fiberquest', {
     install:     (method) => ipcRenderer.invoke('retroarch:install', method),
     pickRomsDir: ()       => ipcRenderer.invoke('retroarch:pickRomsDir'),
     launch:      (gameId) => ipcRenderer.invoke('retroarch:launch', gameId),
+    showMsg:     (msg)    => ipcRenderer.invoke('retroarch:showMsg', msg),
+  },
+  // Tournament controller assignment
+  controllerMap: {
+    set: (tId, map) => ipcRenderer.invoke('tournament:setControllerMap', tId, map),
   },
   // Auto-updater
   updater: {
@@ -57,5 +62,19 @@ contextBridge.exposeInMainWorld('fiberquest', {
     get:      ()        => ipcRenderer.invoke('config:get'),
     save:     (updates) => ipcRenderer.invoke('config:save', updates),
     defaults: ()        => ipcRenderer.invoke('config:defaults'),
+  },
+  // Agent — CKB on-chain wallet
+  agent: {
+    setKey:   (key)  => ipcRenderer.invoke('agent:setKey', key),
+    clearKey: ()     => ipcRenderer.invoke('agent:clearKey'),
+    status:   ()     => ipcRenderer.invoke('agent:status'),
+  },
+  // Chain — tournament discovery
+  chain: {
+    scan: () => ipcRenderer.invoke('chain:scan'),
+  },
+  // QR code generation
+  qr: {
+    generate: (text) => ipcRenderer.invoke('qr:generate', text),
   },
 });

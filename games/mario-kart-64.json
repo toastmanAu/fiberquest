@@ -3,7 +3,7 @@
   "name": "Mario Kart 64",
   "system": "n64",
   "rom_name": "Mario Kart 64 (USA).z64",
-  "core": "mupen64plus_next",
+  "core": "/home/phill/.config/retroarch/cores/mupen64plus_next_libretro.so",
   "description": "The definitive party racing game. Race mode or balloon battle — everyone knows this one.",
 
   "ram_addresses": {
