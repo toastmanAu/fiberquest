@@ -8,12 +8,16 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('fiberquest', {
   // Fiber
   fiber: {
-    nodeInfo:     ()           => ipcRenderer.invoke('fiber:nodeInfo'),
-    listChannels: ()           => ipcRenderer.invoke('fiber:listChannels'),
-    listPayments: (params)     => ipcRenderer.invoke('fiber:listPayments', params),
-    newInvoice:   (amt, desc)  => ipcRenderer.invoke('fiber:newInvoice', amt, desc),
-    sendPayment:  (invoice)    => ipcRenderer.invoke('fiber:sendPayment', invoice),
-    rpc:          (m, p)       => ipcRenderer.invoke('fiber:rpc', m, p),
+    nodeInfo:      ()          => ipcRenderer.invoke('fiber:nodeInfo'),
+    listChannels:  ()          => ipcRenderer.invoke('fiber:listChannels'),
+    listPayments:  (params)    => ipcRenderer.invoke('fiber:listPayments', params),
+    newInvoice:    (amt, desc) => ipcRenderer.invoke('fiber:newInvoice', amt, desc),
+    sendPayment:   (invoice)   => ipcRenderer.invoke('fiber:sendPayment', invoice),
+    rpc:           (m, p)      => ipcRenderer.invoke('fiber:rpc', m, p),
+    detect:        ()          => ipcRenderer.invoke('fiber:detect'),
+    startService:  (node)      => ipcRenderer.invoke('fiber:startService', node),
+    install:       ()          => ipcRenderer.invoke('fiber:install'),
+    applyDetected: (rpcUrl, ckbRpcUrl) => ipcRenderer.invoke('fiber:applyDetected', rpcUrl, ckbRpcUrl),
   },
   // Game
   game: {
@@ -28,6 +32,7 @@ contextBridge.exposeInMainWorld('fiberquest', {
   tournament: {
     create:       (opts)               => ipcRenderer.invoke('tournament:create', opts),
     addPlayer:    (tId, pId, name)     => ipcRenderer.invoke('tournament:addPlayer', tId, pId, name),
+    connectPlayer:(tId, pId)           => ipcRenderer.invoke('tournament:connectPlayer', tId, pId),
     buildPayTx:   (tId, pId, addr)     => ipcRenderer.invoke('tournament:buildPlayerPayTx', tId, pId, addr),
     markPaid:     (tId, pId)           => ipcRenderer.invoke('tournament:markPaid', tId, pId),
     status:       (tId)                => ipcRenderer.invoke('tournament:status', tId),

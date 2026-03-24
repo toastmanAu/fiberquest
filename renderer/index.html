@@ -958,10 +958,37 @@
 
       <div class="settings-section">
         <div class="settings-section-title">⚡ Fiber Node</div>
+
+        <!-- Auto-detect result banner -->
+        <div id="fiber-detect-banner" style="display:none;margin-bottom:var(--sp-sm);padding:var(--sp-xs) var(--sp-sm);border-radius:var(--radius);font-size:var(--fs-xs);border:1px solid var(--border)"></div>
+
         <div class="form-group">
           <label class="form-label">RPC URL</label>
-          <input type="text" class="form-control" id="cfg-fiberRpcUrl" placeholder="http://127.0.0.1:8227">
-          <div class="input-hint">Tunnel: ssh -f -N -L 18226:127.0.0.1:8226 user@host</div>
+          <div style="display:flex;gap:var(--sp-xs)">
+            <input type="text" class="form-control" id="cfg-fiberRpcUrl" placeholder="http://127.0.0.1:8227" style="flex:1">
+            <button class="btn muted" style="white-space:nowrap;font-size:var(--fs-xs)" onclick="fiberDetect()">AUTO-DETECT</button>
+          </div>
+          <div class="input-hint" id="fiber-rpc-hint">No local Fiber node configured. Click AUTO-DETECT or install one.</div>
+        </div>
+
+        <!-- Detected node info -->
+        <div id="fiber-node-info" style="display:none;background:var(--dark);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-xs) var(--sp-sm);font-size:var(--fs-xs);margin-bottom:var(--sp-sm)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <span id="fiber-node-network" style="color:var(--cyan);text-transform:uppercase;font-weight:bold"></span>
+            <span id="fiber-node-status-dot"></span>
+          </div>
+          <div id="fiber-node-peer" style="color:var(--muted);word-break:break-all"></div>
+          <div id="fiber-node-addr" style="color:var(--muted);margin-top:2px"></div>
+        </div>
+
+        <!-- CKB node sub-hint -->
+        <div id="fiber-ckb-hint" class="input-hint" style="margin-top:var(--sp-xs)"></div>
+
+        <!-- Action buttons shown after detect -->
+        <div id="fiber-setup-actions" style="display:none;display:flex;gap:var(--sp-xs);flex-wrap:wrap">
+          <button id="fiber-apply-btn" class="btn" style="font-size:var(--fs-xs);display:none" onclick="fiberApplyDetected()">✓ USE THIS NODE</button>
+          <button id="fiber-start-btn" class="btn muted" style="font-size:var(--fs-xs);display:none" onclick="fiberStartService()">▶ START SERVICE</button>
+          <button class="btn muted" style="font-size:var(--fs-xs)" onclick="fiberInstall()">+ INSTALL FIBER NODE</button>
         </div>
       </div>
 
@@ -1236,6 +1263,10 @@ async function init() {
 function showView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  if (id === 'view-settings') {
+    // Auto-scan for fiber node when settings is opened — show current status
+    fiberDetect().catch(() => {});
+  }
 }
 function goHome() {
   currentTournament = null;
@@ -1350,7 +1381,7 @@ async function startSetup() {
   const agentReady = document.getElementById('agent-status-bar')?.style.display !== 'none';
 
   if (!fiberOk && !agentReady) {
-    alert('⚠️  No payment service available.\n\nEither connect your Fiber node (SSH tunnel) or configure an agent key in Settings to accept L1 JoyID payments.');
+    alert('⚠️  No payment service available.\n\nGo to Settings → Fiber Node → AUTO-DETECT to find your local Fiber node, or configure an agent key to accept L1 JoyID payments.');
     return;
   }
 
@@ -1383,13 +1414,9 @@ function showWaitingRoom() {
         <input type="text" class="slot-input" id="name-${i}" placeholder="Player ${i+1} name">
         <button class="slot-button" onclick="addPlayerName(${i})">ADD PLAYER</button>
       </div>
-      <div id="step-addr-${i}" style="display:none">
-        <input type="text" class="slot-input" id="addr-${i}" placeholder="CKB address (ckt1…)" style="font-size:var(--fs-xs);font-family:monospace">
-        <button class="slot-button" onclick="buildPlayerTx(${i})">BUILD TX →</button>
-      </div>
       <div class="slot-status" id="status-${i}">Waiting...</div>
       <div class="invoice-box" id="invoice-${i}" style="display:none">
-        <div style="font-size:var(--fs-xs);color:var(--yellow);margin-bottom:var(--sp-xs)">SCAN TO SIGN &amp; PAY</div>
+        <div id="invoice-label-${i}" style="font-size:var(--fs-xs);color:var(--yellow);margin-bottom:var(--sp-xs)">SCAN WITH JOYID</div>
         <img class="invoice-qr" id="invoiceQr-${i}" src="" alt="QR" style="display:none">
         <div class="invoice-text" id="invoiceText-${i}"></div>
         <button class="invoice-copy" onclick="copyInvoice(${i})">COPY URL</button>
@@ -1398,7 +1425,7 @@ function showWaitingRoom() {
   showView('view-waiting');
 }
 
-// Step 1: register player name, get slot index
+// Register player name → auto-trigger JoyID connect flow
 async function addPlayerName(slotIndex) {  // eslint-disable-line no-unused-vars
   const nameEl = document.getElementById(`name-${slotIndex}`);
   const name   = nameEl.value.trim();
@@ -1417,50 +1444,43 @@ async function addPlayerName(slotIndex) {  // eslint-disable-line no-unused-vars
     }
     nameEl.disabled = true;
     btn.textContent = 'ADDED';
-    document.getElementById(`status-${slotIndex}`).textContent = 'Enter CKB address to pay';
-    document.getElementById(`step-addr-${slotIndex}`).style.display = 'block';
-    document.getElementById(`addr-${slotIndex}`).focus();
     document.getElementById(`slot-${slotIndex}`).classList.add('active');
   } catch (e) {
     btn.disabled = false; btn.textContent = 'ADD PLAYER';
     document.getElementById(`status-${slotIndex}`).textContent = 'Error: ' + e.message;
+    return;
+  }
+
+  // Auto-trigger JoyID connect — backend emits connect_qr event when URL is ready
+  document.getElementById(`status-${slotIndex}`).textContent = 'Generating connect QR...';
+  try {
+    await window.fiberquest.tournament.connectPlayer(currentTournament.id, `player-${slotIndex}`);
+  } catch (e) {
+    document.getElementById(`status-${slotIndex}`).textContent = 'Connect error: ' + e.message;
   }
 }
 
-// Step 2: given address, build the raw tx and show JoyID sign QR
-async function buildPlayerTx(slotIndex) {  // eslint-disable-line no-unused-vars
-  const addrEl = document.getElementById(`addr-${slotIndex}`);
-  const addr   = addrEl.value.trim();
-  if (!addr || !addr.startsWith('ck')) { addrEl.focus(); return; }
+// Show a QR code in a player slot's invoice box
+async function showSlotQr(slotIndex, url, label) {
+  const box    = document.getElementById(`invoice-${slotIndex}`)
+  const lblEl  = document.getElementById(`invoice-label-${slotIndex}`)
+  const invEl  = document.getElementById(`invoiceText-${slotIndex}`)
+  const qrEl   = document.getElementById(`invoiceQr-${slotIndex}`)
 
-  const btn = document.querySelector(`#step-addr-${slotIndex} .slot-button`);
-  btn.textContent = 'BUILDING...'; btn.disabled = true;
+  if (lblEl) lblEl.textContent = label
+  invEl.textContent  = url
+  invEl.dataset.full = url
+  box.style.display  = 'block'
 
   try {
-    const result = await window.fiberquest.tournament.buildPayTx(
-      currentTournament.id, `player-${slotIndex}`, addr
-    );
-    addrEl.disabled = true;
-    document.getElementById(`status-${slotIndex}`).textContent = 'Scan QR in JoyID to sign & pay';
-    document.getElementById(`invoice-${slotIndex}`).style.display = 'block';
-
-    const invEl = document.getElementById(`invoiceText-${slotIndex}`);
-    invEl.textContent = result.signUrl;
-    invEl.dataset.full = result.signUrl;
-
-    try {
-      const qrDataUrl = await window.fiberquest.qr.generate(result.signUrl);
-      const qrEl  = document.getElementById(`invoiceQr-${slotIndex}`);
-      const txtEl = document.getElementById(`invoiceText-${slotIndex}`);
-      qrEl.src = qrDataUrl;
-      qrEl.style.display = 'block';
-      txtEl.style.display = 'none';
-    } catch (e) {
-      console.warn('QR generation failed:', e.message);
-    }
+    const qrDataUrl = await window.fiberquest.qr.generate(url)
+    qrEl.src = qrDataUrl
+    qrEl.style.display  = 'block'
+    invEl.style.display = 'none'
   } catch (e) {
-    btn.disabled = false; btn.textContent = 'BUILD TX →';
-    document.getElementById(`status-${slotIndex}`).textContent = 'Error: ' + e.message;
+    console.warn('QR generation failed:', e.message)
+    qrEl.style.display  = 'none'
+    invEl.style.display = 'block'
   }
 }
 
@@ -1558,6 +1578,149 @@ function flash(id, msg) {
   setTimeout(() => { el.textContent = ''; }, 3000);
 }
 
+// ── Fiber node auto-detect / setup ────────────────────────
+
+let _fiberDetectedNode = null;
+let _ckbDetectedNode   = null;
+
+async function fiberDetect() {
+  const banner  = document.getElementById('fiber-detect-banner');
+  const hint    = document.getElementById('fiber-rpc-hint');
+  const actions = document.getElementById('fiber-setup-actions');
+  const info    = document.getElementById('fiber-node-info');
+
+  banner.style.display = 'block';
+  banner.style.background = 'var(--dark)';
+  banner.style.color = 'var(--muted)';
+  banner.textContent = 'Scanning for Fiber + CKB nodes…';
+  actions.style.display = 'none';
+  info.style.display = 'none';
+
+  try {
+    const { nodes, best, ckb, bestCkb } = await window.fiberquest.fiber.detect();
+    _ckbDetectedNode = bestCkb || null;
+
+    // ── CKB node hint ───────────────────────────────────────────────
+    const ckbHintEl = document.getElementById('fiber-ckb-hint');
+    if (ckbHintEl) {
+      if (bestCkb?.source === 'public') {
+        ckbHintEl.textContent = 'CKB: using public testnet endpoint';
+        ckbHintEl.style.color = 'var(--muted)';
+      } else if (bestCkb?.reachable) {
+        ckbHintEl.textContent = `CKB: local ${bestCkb.type} node at ${bestCkb.rpcUrl} (${bestCkb.network || '?'})`;
+        ckbHintEl.style.color = 'var(--green)';
+      } else if (bestCkb) {
+        ckbHintEl.textContent = `CKB: ${bestCkb.type} node found but not running (${bestCkb.rpcUrl})`;
+        ckbHintEl.style.color = 'var(--yellow)';
+      }
+    }
+
+    if (!nodes.length) {
+      banner.style.color = 'var(--yellow)';
+      banner.textContent = '⚠ No local Fiber node found.';
+      hint.textContent = 'Install a Fiber node via ckb-access, or enter the RPC URL manually.';
+      actions.style.display = 'flex';
+      document.getElementById('fiber-apply-btn').style.display = 'none';
+      document.getElementById('fiber-start-btn').style.display = 'none';
+      return;
+    }
+
+    _fiberDetectedNode = best;
+    const applyBtn = document.getElementById('fiber-apply-btn');
+    const startBtn = document.getElementById('fiber-start-btn');
+
+    const sourceLabel = best.source === 'ckb-access' ? 'ckb-access' :
+                        best.source === 'process'     ? 'running process' :
+                        best.source === 'port-probe'  ? 'port scan' :
+                        best.source === 'systemd'     ? 'systemd service' : best.source;
+
+    if (best.reachable) {
+      banner.style.color = 'var(--green)';
+      banner.textContent = `✅ Fiber node: ${best.rpcUrl} (${best.network || '?'}, ${sourceLabel})`;
+      hint.textContent = nodes.length > 1 ? `${nodes.length} nodes found — using best match.` : 'Local node detected.';
+      applyBtn.style.display = 'inline-block';
+      startBtn.style.display = 'none';
+    } else if (best.installed) {
+      banner.style.color = 'var(--yellow)';
+      banner.textContent = `⚠ Fiber node installed but not running — ${best.rpcUrl}`;
+      hint.textContent = 'Start the service to activate.';
+      applyBtn.style.display = 'none';
+      startBtn.style.display = best.service ? 'inline-block' : 'none';
+    }
+
+    // Populate node info panel
+    document.getElementById('fiber-node-network').textContent = best.network || '—';
+    if (best.nodeInfo) {
+      const ni = best.nodeInfo;
+      document.getElementById('fiber-node-peer').textContent = 'Peer: ' + (ni.node_id || ni.peer_id || '—');
+      const addrs = (ni.addresses || []).map(a => a.address || a).join(', ');
+      document.getElementById('fiber-node-addr').textContent = addrs ? 'Addr: ' + addrs : '';
+    } else {
+      document.getElementById('fiber-node-peer').textContent = best.rpcUrl;
+      document.getElementById('fiber-node-addr').textContent = '';
+    }
+    document.getElementById('fiber-node-status-dot').innerHTML =
+      best.reachable ? '<span style="color:var(--green)">● RUNNING</span>' :
+      best.running   ? '<span style="color:var(--yellow)">● IDLE</span>' :
+                       '<span style="color:var(--muted)">● STOPPED</span>';
+    info.style.display = 'block';
+    actions.style.display = 'flex';
+
+  } catch (e) {
+    banner.style.color = 'var(--red)';
+    banner.textContent = '❌ Detection failed: ' + e.message;
+  }
+}
+
+async function fiberApplyDetected() {
+  if (!_fiberDetectedNode?.rpcUrl) return;
+  const rpcUrl    = _fiberDetectedNode.rpcUrl;
+  const ckbRpcUrl = _ckbDetectedNode?.source !== 'public' ? _ckbDetectedNode?.rpcUrl : null;
+  try {
+    await window.fiberquest.fiber.applyDetected(rpcUrl, ckbRpcUrl);
+    document.getElementById('cfg-fiberRpcUrl').value = rpcUrl;
+    if (ckbRpcUrl) document.getElementById('cfg-ckbRpcUrl').value = ckbRpcUrl;
+    const banner = document.getElementById('fiber-detect-banner');
+    banner.style.color = 'var(--green)';
+    banner.textContent = '✅ Applied — FiberQuest is using your local nodes.';
+    checkServices();
+  } catch (e) {
+    alert('Failed to apply: ' + e.message);
+  }
+}
+
+async function fiberStartService() {
+  if (!_fiberDetectedNode) return;
+  const btn = document.getElementById('fiber-start-btn');
+  btn.textContent = 'STARTING…';
+  btn.disabled = true;
+  try {
+    const result = await window.fiberquest.fiber.startService(_fiberDetectedNode);
+    if (result.ok) {
+      _fiberDetectedNode = result.node || _fiberDetectedNode;
+      await fiberDetect(); // re-run detect to refresh UI
+    } else {
+      alert('Failed to start service: ' + (result.error || 'unknown'));
+    }
+  } finally {
+    btn.textContent = '▶ START SERVICE';
+    btn.disabled = false;
+  }
+}
+
+async function fiberInstall() {
+  const result = await window.fiberquest.fiber.install();
+  if (!result.ok) {
+    alert('Could not open terminal:\n\n' + result.error +
+      '\n\nInstall manually:\nbash <(curl -fsSL https://raw.githubusercontent.com/toastmanAu/ckb-access/main/fiber/install.sh)');
+  } else {
+    const banner = document.getElementById('fiber-detect-banner');
+    banner.style.display = 'block';
+    banner.style.color = 'var(--cyan)';
+    banner.textContent = '📟 Installer launched in terminal. Run AUTO-DETECT when complete.';
+  }
+}
+
 // ── Controller assignment ──────────────────────────────────
 // pendingControllerMap: slot index → gamepad port, captured before payment
 let pendingControllerMap = null;
@@ -1618,10 +1781,24 @@ function waitForUniqueButtonPress(excludePorts) {
 function handleTournamentEvent(ev) {
   switch (ev.event) {
     case 'started': showLive(ev); break;
+    case 'connect_qr': {
+      const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const st = document.getElementById(`status-${slotIdx}`)
+      if (st) st.textContent = 'Step 1: Scan to connect JoyID wallet'
+      showSlotQr(slotIdx, ev.connectUrl, 'STEP 1 — CONNECT JOYID')
+      break
+    }
+    case 'sign_url': {
+      const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const st = document.getElementById(`status-${slotIdx}`)
+      if (st) st.textContent = 'Step 2: Scan to sign & pay'
+      showSlotQr(slotIdx, ev.signUrl, 'STEP 2 — SIGN & PAY')
+      break
+    }
     case 'deposit_timeout': {
       const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`);
-      if (st) { st.textContent = '⏱ TIMED OUT — rescan or re-enter address'; st.style.color = 'var(--red)'; }
+      if (st) { st.textContent = '⏱ TIMED OUT — click ADD PLAYER to retry'; st.style.color = 'var(--red)'; }
       break;
     }
     case 'player_paid': {

@@ -7,8 +7,21 @@
  * Private key is loaded from CKB_PRIVATE_KEY env var (64-char hex, no 0x prefix).
  */
 
+const http   = require('http')
+const os     = require('os')
+const crypto = require('crypto')
 const CKB = require('@nervosnetwork/ckb-sdk-core').default
 const utils = require('@nervosnetwork/ckb-sdk-utils')
+
+/** Return first non-loopback IPv4 address on the LAN */
+function getLocalIP () {
+  for (const iface of Object.values(os.networkInterfaces())) {
+    for (const addr of iface) {
+      if (addr.family === 'IPv4' && !addr.internal) return addr.address
+    }
+  }
+  return '127.0.0.1'
+}
 
 const SECP256K1_CODE_HASH = '0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8'
 // secp256k1 dep group outpoint — genesis block tx[1] index 0
@@ -63,6 +76,120 @@ class AgentWallet {
     }
     // Full bech32m address (CKB2021 format — not deprecated short form)
     this.address = utils.scriptToAddress(this.lockScript, this.isMainnet)
+
+    // JoyID callback server — started lazily on first buildJoyIDSignTxUrl call
+    this._callbackPort    = opts.callbackPort || 8766
+    this._callbackServer  = null
+    this._callbackHandlers = new Map()  // callbackId → (signedTx) => void
+  }
+
+  // ── JoyID callback server ─────────────────────────────────────────────────
+
+  /**
+   * Start the local HTTP server that catches JoyID redirect callbacks.
+   * JoyID signs the tx and redirects the phone browser to:
+   *   http://<localIP>:<port>/joyid/<callbackId>?_result_=<base64>
+   * We extract the signed tx and submit it to CKB.
+   */
+  startCallbackServer () {
+    if (this._callbackServer) return  // already running
+    this._callbackServer = http.createServer((req, res) => {
+      try {
+        const url  = new URL(req.url, `http://localhost:${this._callbackPort}`)
+        const cbId = url.pathname.replace(/^\/joyid\//, '')
+        const b64  = url.searchParams.get('_result_')
+
+        if (!cbId || !b64 || !this._callbackHandlers.has(cbId)) {
+          res.writeHead(404); res.end('Not found'); return
+        }
+
+        let signedTx
+        try {
+          const result = JSON.parse(Buffer.from(b64, 'base64url').toString())
+          signedTx = result.tx || result
+        } catch {
+          // Some JoyID versions URI-encode the result rather than base64url it
+          const result = JSON.parse(decodeURIComponent(b64))
+          signedTx = result.tx || result
+        }
+
+        const handler = this._callbackHandlers.get(cbId)
+        this._callbackHandlers.delete(cbId)
+
+        // Respond to phone immediately — submission happens async
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end('<html><body style="font-family:sans-serif;text-align:center;padding:2rem">' +
+                '<h1>✅ Signed!</h1><p>Submitting payment… you can close this tab.</p></body></html>')
+
+        handler(signedTx).catch(e =>
+          console.error('[AgentWallet] JoyID callback handler error:', e.message)
+        )
+      } catch (e) {
+        console.error('[AgentWallet] JoyID callback parse error:', e.message)
+        res.writeHead(400); res.end('Bad request')
+      }
+    })
+
+    this._callbackServer.listen(this._callbackPort, () => {
+      console.log(`[AgentWallet] JoyID callback server listening on :${this._callbackPort}`)
+    })
+  }
+
+  /**
+   * Register a one-shot callback for a JoyID sign result.
+   * Returns the callback URL to embed in the JoyID deep-link.
+   */
+  registerJoyIDCallback (handler) {
+    this.startCallbackServer()
+    const cbId = crypto.randomUUID().replace(/-/g, '')
+    this._callbackHandlers.set(cbId, handler)
+    const localIP = getLocalIP()
+    return `http://${localIP}:${this._callbackPort}/joyid/${cbId}`
+  }
+
+  /**
+   * Build a JoyID connect URL — player scans QR, approves in JoyID app,
+   * agent receives their CKB address + pubkey via callback.
+   *
+   * No address entry needed. This is the frictionless onboarding step.
+   * Call BEFORE buildJoyIDSignTxUrl — connect gives you the address.
+   *
+   * @param {function} onConnect  - callback({ address, pubkey, keyType })
+   * @returns {string}  JoyID connect URL (encode as QR to show player)
+   */
+  buildJoyIDConnectUrl (onConnect) {
+    const network     = this.isMainnet ? 'mainnet' : 'testnet'
+    const callbackUrl = this.registerJoyIDCallback((result) => {
+      // JoyID authorize returns array of connected accounts
+      const accounts = Array.isArray(result) ? result : [result]
+      const account  = accounts[0]
+      if (!account?.address) return
+      onConnect({
+        address: account.address,
+        pubkey:  account.pubkey  || account.publicKey || null,
+        keyType: account.keyType || account.key_type  || 'main',
+      })
+    })
+
+    const request = {
+      redirectURL: callbackUrl,
+      name:        'FiberQuest',
+      logo:        'https://raw.githubusercontent.com/toastmanAu/fiberquest/main/renderer/logo.jpeg',
+      network,
+      requestNetwork: 'ckb',
+    }
+
+    const parts = []
+    for (const [k, v] of Object.entries(request)) {
+      if (v === undefined || v === null) continue
+      const val = typeof v === 'object' ? JSON.stringify(v) : String(v)
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(val)}`)
+    }
+    const dataStr = '?' + parts.join('&')
+    const url     = new URL('https://app.joy.id/authorize')
+    url.searchParams.set('type', 'redirect')
+    url.searchParams.set('_data_', dataStr)
+    return url.href
   }
 
   async _rpc (method, params = []) {
@@ -271,19 +398,20 @@ class AgentWallet {
    * Encode a raw CKB transaction as a JoyID deep-link URL for mobile signing.
    * Replicates @joyid/common buildJoyIDURL without importing the browser SDK.
    *
-   * The player scans this QR on their phone → JoyID shows the tx → they sign → JoyID broadcasts.
-   * We watch the chain for our dataMarker to confirm payment.
+   * JoyID signs the tx and redirects the phone's browser to callbackUrl with
+   * the signed tx in ?_result_=<base64>. The local callback server submits it.
    *
    * @param {object} rawTx         - CKBTransaction (camelCase SDK format)
    * @param {string} playerAddress - signer's CKB address
+   * @param {string} callbackUrl   - local HTTP URL for JoyID redirect (from registerJoyIDCallback)
    * @returns {string}  Full JoyID deep-link URL
    */
-  buildJoyIDSignTxUrl (rawTx, playerAddress) {
+  buildJoyIDSignTxUrl (rawTx, playerAddress, callbackUrl) {
     const network = this.isMainnet ? 'mainnet' : 'testnet'
     const request = {
       tx:            rawTx,
       signerAddress: playerAddress,
-      redirectURL:   'https://fiberquest.app',  // placeholder — we don't use the redirect
+      redirectURL:   callbackUrl,
       name:          'FiberQuest',
       network,
       witnessIndexes: [0],

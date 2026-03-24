@@ -19,11 +19,13 @@ class FiberClient {
    * @param {object} opts
    * @param {number} opts.timeout - Request timeout in ms (default 10000)
    * @param {boolean} opts.debug - Log all RPC calls
+   * @param {string} opts.authToken - Biscuit token for nodes with auth enabled
    */
   constructor(rpcUrl, opts = {}) {
     this.rpcUrl = rpcUrl;
     this.timeout = opts.timeout || 10000;
     this.debug = opts.debug || false;
+    this.authToken = opts.authToken || null;
     this._id = 0;
   }
 
@@ -45,6 +47,7 @@ class FiberClient {
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
+          ...(this.authToken ? { 'Authorization': `Bearer ${this.authToken}` } : {}),
         },
       }, (res) => {
         let data = '';

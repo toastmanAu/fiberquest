@@ -192,6 +192,34 @@ class Tournament extends EventEmitter {
   }
 
   /**
+   * JoyID connect step — generate a connect QR for the player.
+   * Player scans QR in JoyID app → agent receives their address via callback →
+   * automatically calls buildPlayerPayTx → emits sign_url.
+   *
+   * Emits: connect_qr({ playerId, name, connectUrl })
+   *
+   * @param {string} playerId
+   * @returns {{ playerId, connectUrl }}
+   */
+  connectPlayer (playerId) {
+    const player = this.players[playerId]
+    if (!player) throw new Error(`Unknown player: ${playerId}`)
+    if (!this._wallet) throw new Error('Agent wallet not configured')
+
+    const connectUrl = this._wallet.buildJoyIDConnectUrl(({ address }) => {
+      console.log(`[Tournament] JoyID connect callback for ${player.name} — address ${address}`)
+      this.buildPlayerPayTx(playerId, address).catch(e => {
+        console.error(`[Tournament] buildPlayerPayTx failed for ${player.name}:`, e.message)
+        this.emit('error', new Error(`Pay tx build failed for ${player.name}: ${e.message}`))
+      })
+    })
+
+    console.log(`[Tournament] JoyID connect URL for ${player.name}: ${connectUrl}`)
+    this.emit('connect_qr', { playerId, name: player.name, connectUrl })
+    return { playerId, connectUrl }
+  }
+
+  /**
    * Step 2 of player registration (L1 path):
    * Given the player's CKB address, build a raw deposit transaction and return
    * the JoyID deep-link URL for them to scan and sign.
@@ -212,13 +240,28 @@ class Tournament extends EventEmitter {
     const { rawTx, dataMarker } = await this._wallet.buildPlayerDepositTx(
       playerAddress, this.id, player.slotIndex, this.entryFee
     );
-    const signUrl = this._wallet.buildJoyIDSignTxUrl(rawTx, playerAddress);
+
+    // Register callback — JoyID will redirect phone browser here with signed tx
+    const callbackUrl = this._wallet.registerJoyIDCallback(async (signedTx) => {
+      console.log(`[Tournament] JoyID callback received for ${player.name} — submitting tx`);
+      try {
+        const txHash = await this._wallet.sendRawTx(signedTx);
+        console.log(`[Tournament] ✅ JoyID deposit submitted for ${player.name}: ${txHash}`);
+      } catch (e) {
+        console.error(`[Tournament] ❌ JoyID deposit submit failed for ${player.name}:`, e.message);
+        this.emit('error', new Error(`JoyID deposit submit failed for ${player.name}: ${e.message}`));
+      }
+      // Chain watcher will detect the marker and call markPaid
+    });
+
+    const signUrl = this._wallet.buildJoyIDSignTxUrl(rawTx, playerAddress, callbackUrl);
 
     player.signUrl       = signUrl;
-    player.senderAddress = playerAddress;  // we know their address now
+    player.senderAddress = playerAddress;
     player.dataMarker    = dataMarker;
 
     console.log(`[Tournament] Built L1 deposit tx for ${player.name} — marker ${dataMarker}`);
+    console.log(`[Tournament] JoyID callback: ${callbackUrl}`);
     this.emit('sign_url', { playerId, name: player.name, signUrl, dataMarker });
 
     // Start per-slot chain watcher now that we have the marker
@@ -662,8 +705,9 @@ class Tournament extends EventEmitter {
 class TournamentManager extends EventEmitter {
   constructor(opts = {}) {
     super();
-    this.fiberRpc   = opts.fiberRpc || process.env.FIBER_RPC_URL || 'http://127.0.0.1:18226';
-    this.fiber      = new FiberClient(this.fiberRpc);
+    this.fiberRpc       = opts.fiberRpc || process.env.FIBER_RPC_URL || 'http://127.0.0.1:18226';
+    this.fiberAuthToken = opts.fiberAuthToken || process.env.FIBER_AUTH_TOKEN || null;
+    this.fiber          = new FiberClient(this.fiberRpc, { authToken: this.fiberAuthToken });
     this.tournaments = new Map();
     this._pollInterval = null;
 

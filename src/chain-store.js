@@ -163,9 +163,9 @@ class ChainStore {
 
     const result = await this._rpc('get_cells', [
       {
-        script: { codeHash: ALWAYS_SUCCESS_CODE_HASH, hashType: 'data1', args },
-        scriptType: 'type',
-        withData: true
+        script: { code_hash: ALWAYS_SUCCESS_CODE_HASH, hash_type: 'data1', args },
+        script_type: 'type',
+        with_data: true
       },
       'desc',
       '0x64' // up to 100 cells
@@ -173,11 +173,11 @@ class ChainStore {
 
     const tournaments = []
     for (const cell of result.objects || []) {
-      const data = this.decodeData(cell.outputData)
+      const data = this.decodeData(cell.output_data || cell.outputData)
       if (!data) continue // skips non-FQTX cells (false positive guard)
       tournaments.push({
         ...data,
-        outPoint:    { txHash: cell.outPoint.txHash, index: cell.outPoint.index },
+        outPoint:    { txHash: cell.out_point?.tx_hash || cell.outPoint?.txHash, index: cell.out_point?.index || cell.outPoint?.index },
         capacityCkb: Number(BigInt(cell.output.capacity)) / 1e8
       })
     }

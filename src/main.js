@@ -12,6 +12,7 @@ const { Worker } = require('worker_threads');
 const GameServer = require('./game-server');
 const FiberClient = require('./fiber-client');
 const { TournamentManager } = require('./tournament-manager');
+const { detectAll, pickBestNode, pickBestCkbNode, startNodeService, launchInstaller } = require('./fiber-setup');
 
 // ── Secure key storage ──────────────────────────────────────────────────────
 
@@ -59,8 +60,9 @@ try {
 // ── Config ─────────────────────────────────────────────────────────────────
 
 const CONFIG_DEFAULTS = {
-  fiberRpcUrl:                 process.env.FIBER_RPC_URL || 'http://127.0.0.1:18226',
-  ckbRpcUrl:                   process.env.CKB_RPC_URL  || 'https://testnet.ckbapp.dev/',
+  fiberRpcUrl:                 process.env.FIBER_RPC_URL    || 'http://127.0.0.1:8227',
+  fiberAuthToken:              process.env.FIBER_AUTH_TOKEN || null,
+  ckbRpcUrl:                   process.env.CKB_RPC_URL      || 'https://testnet.ckbapp.dev/',
   gameServerPort:              8765,
   retroarchHost:               '127.0.0.1',
   retroarchUdp:                55355,
@@ -97,7 +99,7 @@ function saveConfig(updates) {
   Object.assign(CONFIG, next);
   // Reconnect fiber client if URL changed
   if (updates.fiberRpcUrl && fiberClient) {
-    fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode });
+    fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode, authToken: CONFIG.fiberAuthToken });
   }
   return next;
 }
@@ -166,6 +168,45 @@ function setupIPC() {
   ipcMain.handle('fiber:sendPayment', async (_, invoice) => {
     return fiberClient.sendPayment(invoice);
   });
+
+  // ── Fiber node setup / auto-detection ────────────────────────────────────
+
+  ipcMain.handle('fiber:detect', async () => {
+    const { fiber, ckb, bestFiber, bestCkb } = await detectAll()
+    return { nodes: fiber, best: bestFiber, ckb, bestCkb }
+  })
+
+  ipcMain.handle('fiber:startService', async (_, nodeJson) => {
+    const result = startNodeService(nodeJson)
+    if (result.ok) {
+      // Give the service a moment to come up then re-query
+      await new Promise(r => setTimeout(r, 2000))
+      const nodes = await detectFiberNodes()
+      const updated = nodes.find(n => n.prefix === nodeJson.prefix)
+      return { ok: true, node: updated || nodeJson }
+    }
+    return result
+  })
+
+  ipcMain.handle('fiber:install', () => {
+    return launchInstaller()
+  })
+
+  ipcMain.handle('fiber:applyDetected', async (_, rpcUrl, ckbRpcUrl) => {
+    const updates = {}
+    if (rpcUrl) {
+      CONFIG.fiberRpcUrl = rpcUrl
+      fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode, authToken: CONFIG.fiberAuthToken })
+      if (tournamentManager) tournamentManager.fiberRpc = rpcUrl
+      updates.fiberRpcUrl = rpcUrl
+    }
+    if (ckbRpcUrl) {
+      CONFIG.ckbRpcUrl = ckbRpcUrl
+      updates.ckbRpcUrl = ckbRpcUrl
+    }
+    saveConfig(updates)
+    return { ok: true, rpcUrl, ckbRpcUrl }
+  })
 
   // Game server control
   ipcMain.handle('game:status', async () => ({
@@ -403,6 +444,12 @@ function setupTournamentIPC() {
   });
 
   // Step 2: given player address, build the raw tx and return JoyID sign URL
+  ipcMain.handle('tournament:connectPlayer', (_, tId, playerId) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.connectPlayer(playerId);
+  });
+
   ipcMain.handle('tournament:buildPlayerPayTx', async (_, tId, playerId, playerAddress) => {
     const t = tournamentManager.get(tId);
     if (!t) throw new Error('Tournament not found: ' + tId);
@@ -459,6 +506,7 @@ function _wireTournamentToRenderer(tm) {
 
   tm.on('invoice',           data => { console.log('[TM→UI] invoice', data);            push('invoice', data); });
   tm.on('player_registered', data => { console.log('[TM→UI] player_registered', data); push('player_registered', data); });
+  tm.on('connect_qr',        data => { console.log('[TM→UI] connect_qr', data);         push('connect_qr', data); });
   tm.on('sign_url',          data => { console.log('[TM→UI] sign_url', data);           push('sign_url', data); });
   tm.on('deposit_timeout',   data => { console.log('[TM→UI] deposit_timeout', data);    push('deposit_timeout', data); });
   tm.on('player_paid',       data => { console.log('[TM→UI] player_paid', data);        push('player_paid', data); });
@@ -544,8 +592,23 @@ function _initChainStore(wallet) {
 }
 
 app.whenReady().then(async () => {
+  // Auto-detect local Fiber + CKB nodes if running on defaults (no saved config)
+  try {
+    const { bestFiber, bestCkb } = await detectAll()
+    if (bestFiber?.rpcUrl && CONFIG.fiberRpcUrl === 'http://127.0.0.1:8227') {
+      CONFIG.fiberRpcUrl = bestFiber.rpcUrl
+      console.log(`[Main] Auto-detected Fiber node: ${bestFiber.rpcUrl} (${bestFiber.network || '?'}, source=${bestFiber.source})`)
+    }
+    if (bestCkb?.source !== 'public' && CONFIG.ckbRpcUrl === 'https://testnet.ckbapp.dev/') {
+      CONFIG.ckbRpcUrl = bestCkb.rpcUrl
+      console.log(`[Main] Auto-detected CKB node: ${bestCkb.rpcUrl} (${bestCkb.type}, source=${bestCkb.source})`)
+    }
+  } catch (e) {
+    console.warn('[Main] Node auto-detect failed:', e.message)
+  }
+
   // Init Fiber client
-  fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode });
+  fiberClient = new FiberClient(CONFIG.fiberRpcUrl, { debug: CONFIG.devMode, authToken: CONFIG.fiberAuthToken });
   const alive = await fiberClient.isAlive();
   console.log(`[Main] Fiber node at ${CONFIG.fiberRpcUrl}: ${alive ? '✅ connected' : '❌ unreachable'}`);
 
@@ -569,8 +632,9 @@ app.whenReady().then(async () => {
 
   // Tournament manager → wire events to HMI
   tournamentManager = new TournamentManager({
-    fiberRpc: CONFIG.fiberRpcUrl,
-    wallet: agentWallet || undefined,
+    fiberRpc:       CONFIG.fiberRpcUrl,
+    fiberAuthToken: CONFIG.fiberAuthToken,
+    wallet:         agentWallet || undefined,
   });
   _wireTournamentToHMI(tournamentManager);
 
