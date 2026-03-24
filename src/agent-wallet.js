@@ -86,32 +86,56 @@ class AgentWallet {
   // ── JoyID callback server ─────────────────────────────────────────────────
 
   /**
+   * Decode a JoyID redirect response from the _data_ query param.
+   * JoyID uses qss encoding: key=urlencoded(jsonStringifiedValue)&...
+   * Wrapped as DappResponse: { data: <AuthResponseData|SignCkbTxResponseData>, error: null }
+   */
+  _decodeJoyIDData (raw) {
+    if (!raw) return null
+    const str = raw.startsWith('?') ? raw.slice(1) : raw
+    const out = {}
+    for (const pair of str.split('&')) {
+      if (!pair) continue
+      const eqIdx = pair.indexOf('=')
+      const k = decodeURIComponent(pair.slice(0, eqIdx))
+      const v = decodeURIComponent(pair.slice(eqIdx + 1))
+      try { out[k] = JSON.parse(v) } catch { out[k] = v }
+    }
+    return out
+  }
+
+  /**
    * Start the local HTTP server that catches JoyID redirect callbacks.
-   * JoyID signs the tx and redirects the phone browser to:
-   *   http://<localIP>:<port>/joyid/<callbackId>?_result_=<base64>
-   * We extract the signed tx and submit it to CKB.
+   * JoyID redirects the phone browser back to:
+   *   http://<localIP>:<port>/joyid/<callbackId>?joyid-redirect=true&_data_=<qss-encoded DappResponse>
    */
   startCallbackServer () {
     if (this._callbackServer) return  // already running
     this._callbackServer = http.createServer((req, res) => {
       try {
         const url  = new URL(req.url, `http://localhost:${this._callbackPort}`)
-        const cbId = url.pathname.replace(/^\/joyid\//, '')
-        const b64  = url.searchParams.get('_result_')
+        // cbId is in the path; joyid-redirect=true and _data_ are added by JoyID
+        const cbId  = url.pathname.replace(/^\/joyid\//, '').replace(/\/$/, '')
+        const raw   = url.searchParams.get('_data_')
 
-        if (!cbId || !b64 || !this._callbackHandlers.has(cbId)) {
+        if (!cbId || !this._callbackHandlers.has(cbId)) {
           res.writeHead(404); res.end('Not found'); return
         }
 
-        let signedTx
-        try {
-          const result = JSON.parse(Buffer.from(b64, 'base64url').toString())
-          signedTx = result.tx || result
-        } catch {
-          // Some JoyID versions URI-encode the result rather than base64url it
-          const result = JSON.parse(decodeURIComponent(b64))
-          signedTx = result.tx || result
+        if (!raw) {
+          console.error('[AgentWallet] JoyID callback missing _data_ param — url:', req.url)
+          res.writeHead(400); res.end('Missing _data_'); return
         }
+
+        // Decode qss DappResponse wrapper: { data: <payload>, error: null }
+        const wrapper = this._decodeJoyIDData(raw)
+        if (wrapper?.error) {
+          console.error('[AgentWallet] JoyID returned error:', wrapper.error)
+          res.writeHead(400); res.end('JoyID error'); return
+        }
+
+        const payload = wrapper?.data ?? wrapper
+        console.log('[AgentWallet] JoyID callback payload:', JSON.stringify(payload)?.slice(0, 200))
 
         const handler = this._callbackHandlers.get(cbId)
         this._callbackHandlers.delete(cbId)
@@ -119,13 +143,13 @@ class AgentWallet {
         // Respond to phone immediately — submission happens async
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end('<html><body style="font-family:sans-serif;text-align:center;padding:2rem">' +
-                '<h1>✅ Signed!</h1><p>Submitting payment… you can close this tab.</p></body></html>')
+                '<h1>✅ Done!</h1><p>You can close this tab.</p></body></html>')
 
-        handler(signedTx).catch(e =>
+        Promise.resolve(handler(payload)).catch(e =>
           console.error('[AgentWallet] JoyID callback handler error:', e.message)
         )
       } catch (e) {
-        console.error('[AgentWallet] JoyID callback parse error:', e.message)
+        console.error('[AgentWallet] JoyID callback parse error:', e.message, 'url:', req.url)
         res.writeHead(400); res.end('Bad request')
       }
     })
@@ -144,7 +168,8 @@ class AgentWallet {
     const cbId = crypto.randomUUID().replace(/-/g, '')
     this._callbackHandlers.set(cbId, handler)
     const localIP = getLocalIP()
-    return `http://${localIP}:${this._callbackPort}/joyid/${cbId}`
+    // joyid-redirect=true is required — JoyID only redirects back if this param is present
+    return `http://${localIP}:${this._callbackPort}/joyid/${cbId}?joyid-redirect=true`
   }
 
   /**
@@ -158,25 +183,26 @@ class AgentWallet {
    * @returns {string}  JoyID connect URL (encode as QR to show player)
    */
   buildJoyIDConnectUrl (onConnect) {
-    const network     = this.isMainnet ? 'mainnet' : 'testnet'
-    const callbackUrl = this.registerJoyIDCallback((result) => {
-      // JoyID authorize returns array of connected accounts
-      const accounts = Array.isArray(result) ? result : [result]
-      const account  = accounts[0]
-      if (!account?.address) return
+    // testnet.joyid.dev for testnet, app.joy.id for mainnet
+    const joyidBase   = this.isMainnet ? 'https://app.joy.id' : 'https://testnet.joyid.dev'
+    const callbackUrl = this.registerJoyIDCallback((payload) => {
+      // payload is AuthResponseData: { address, pubkey, keyType, alg, ... }
+      if (!payload?.address) {
+        console.error('[AgentWallet] JoyID connect callback missing address:', payload)
+        return
+      }
       onConnect({
-        address: account.address,
-        pubkey:  account.pubkey  || account.publicKey || null,
-        keyType: account.keyType || account.key_type  || 'main',
+        address: payload.address,
+        pubkey:  payload.pubkey  || null,
+        keyType: payload.keyType || 'main_key',
       })
     })
 
     const request = {
-      redirectURL: callbackUrl,
-      name:        'FiberQuest',
-      logo:        'https://raw.githubusercontent.com/toastmanAu/fiberquest/main/renderer/logo.jpeg',
-      network,
-      requestNetwork: 'ckb',
+      redirectURL:    callbackUrl,
+      name:           'FiberQuest',
+      logo:           'https://raw.githubusercontent.com/toastmanAu/fiberquest/main/renderer/logo.jpeg',
+      requestNetwork: 'nervos',
     }
 
     const parts = []
@@ -186,7 +212,7 @@ class AgentWallet {
       parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(val)}`)
     }
     const dataStr = '?' + parts.join('&')
-    const url     = new URL('https://app.joy.id/authorize')
+    const url     = new URL(`${joyidBase}/auth`)
     url.searchParams.set('type', 'redirect')
     url.searchParams.set('_data_', dataStr)
     return url.href
@@ -407,17 +433,14 @@ class AgentWallet {
    * @returns {string}  Full JoyID deep-link URL
    */
   buildJoyIDSignTxUrl (rawTx, playerAddress, callbackUrl) {
-    const network = this.isMainnet ? 'mainnet' : 'testnet'
+    const joyidBase = this.isMainnet ? 'https://app.joy.id' : 'https://testnet.joyid.dev'
     const request = {
-      tx:            rawTx,
-      signerAddress: playerAddress,
-      redirectURL:   callbackUrl,
-      name:          'FiberQuest',
-      network,
+      tx:             rawTx,
+      signerAddress:  playerAddress,
+      redirectURL:    callbackUrl,
+      name:           'FiberQuest',
       witnessIndexes: [0],
     }
-    // Replicate encodeSearch from @joyid/common:
-    // Objects are JSON.stringify'd, then all keys/values are URL-encoded
     const parts = []
     for (const [k, v] of Object.entries(request)) {
       if (v === undefined || v === null) continue
@@ -425,7 +448,7 @@ class AgentWallet {
       parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(val)}`)
     }
     const dataStr = '?' + parts.join('&')
-    const url     = new URL('https://app.joy.id/sign-ckb-raw-tx')
+    const url     = new URL(`${joyidBase}/sign-ckb-raw-tx`)
     url.searchParams.set('type', 'redirect')
     url.searchParams.set('_data_', dataStr)
     return url.href

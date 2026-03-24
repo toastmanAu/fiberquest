@@ -62,6 +62,7 @@
     font-size: var(--fs-sm);
     line-height: 1.7;
     overflow: hidden;
+    padding-bottom: clamp(80px, 12vh, 140px);
   }
 
   /* ── Header ────────────────────────────────────────────── */
@@ -499,6 +500,32 @@
   .player-slot.active {
     border-color: var(--green);
     box-shadow: 0 0 16px rgba(57,255,20,0.3);
+  }
+
+  /* ── Retro console ─────────────────────────────────────── */
+  #retro-console {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: clamp(80px, 12vh, 140px);
+    background: rgba(5,5,5,0.93);
+    border-top: 1px solid var(--green);
+    font-family: monospace;
+    font-size: clamp(9px, 0.65vw, 12px);
+    color: var(--green);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--sp-xs) var(--sp-sm);
+    z-index: 9999;
+    scroll-behavior: smooth;
+  }
+  #retro-console .rc-line { padding: 1px 0; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+  #retro-console .rc-line.warn  { color: var(--yellow); }
+  #retro-console .rc-line.error { color: var(--red); }
+  #retro-console .rc-line.info  { color: var(--cyan); }
+  #retro-console .rc-line.ok    { color: var(--green); }
+  #retro-console .rc-toggle {
+    position: absolute; top: 3px; right: 6px;
+    color: var(--muted); font-size: var(--fs-xs); cursor: pointer; user-select: none;
   }
   .slot-input {
     width: 100%;
@@ -1444,19 +1471,23 @@ async function addPlayerName(slotIndex) {  // eslint-disable-line no-unused-vars
     }
     nameEl.disabled = true;
     btn.textContent = 'ADDED';
+    retroLog(`[P${slotIndex+1}] Player "${name}" registered`, 'info')
     document.getElementById(`slot-${slotIndex}`).classList.add('active');
   } catch (e) {
     btn.disabled = false; btn.textContent = 'ADD PLAYER';
     document.getElementById(`status-${slotIndex}`).textContent = 'Error: ' + e.message;
+    retroLog(`[P${slotIndex+1}] Register error: ${e.message}`, 'error')
     return;
   }
 
   // Auto-trigger JoyID connect — backend emits connect_qr event when URL is ready
   document.getElementById(`status-${slotIndex}`).textContent = 'Generating connect QR...';
+  retroLog(`[P${slotIndex+1}] Building JoyID connect URL…`, 'info')
   try {
     await window.fiberquest.tournament.connectPlayer(currentTournament.id, `player-${slotIndex}`);
   } catch (e) {
     document.getElementById(`status-${slotIndex}`).textContent = 'Connect error: ' + e.message;
+    retroLog(`[P${slotIndex+1}] Connect error: ${e.message}`, 'error')
   }
 }
 
@@ -1780,18 +1811,28 @@ function waitForUniqueButtonPress(excludePorts) {
 // ── Tournament events ─────────────────────────────────────
 function handleTournamentEvent(ev) {
   switch (ev.event) {
-    case 'started': showLive(ev); break;
+    case 'started': retroLog('Tournament started — GO!', 'ok'); showLive(ev); break;
     case 'connect_qr': {
       const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`)
       if (st) st.textContent = 'Step 1: Scan to connect JoyID wallet'
+      retroLog(`[P${slotIdx+1}] JoyID connect QR ready`, 'info')
       showSlotQr(slotIdx, ev.connectUrl, 'STEP 1 — CONNECT JOYID')
+      break
+    }
+    case 'player_connected': {
+      const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const st = document.getElementById(`status-${slotIdx}`)
+      const short = ev.address ? ev.address.slice(0,12) + '…' + ev.address.slice(-6) : '?'
+      if (st) { st.textContent = `Connected: ${short} — building pay tx…`; st.style.color = 'var(--cyan)'; }
+      retroLog(`[P${slotIdx+1}] JoyID connected — ${short} — querying UTXOs…`, 'ok')
       break
     }
     case 'sign_url': {
       const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`)
-      if (st) st.textContent = 'Step 2: Scan to sign & pay'
+      if (st) { st.textContent = 'Step 2: Scan to sign & pay'; st.style.color = 'var(--text)'; }
+      retroLog(`[P${slotIdx+1}] Deposit tx built — showing sign QR`, 'ok')
       showSlotQr(slotIdx, ev.signUrl, 'STEP 2 — SIGN & PAY')
       break
     }
@@ -1806,6 +1847,7 @@ function handleTournamentEvent(ev) {
       const idx = players.findIndex(p => p.id === ev.playerId);
       const slotIdx = idx >= 0 ? idx : parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`);
+      retroLog(`[P${slotIdx+1}] Payment confirmed on-chain ✅`, 'ok')
       if (st) { st.textContent = '✅ PAID'; st.style.color = 'var(--green)'; }
       // mark locally
       if (players[slotIdx]) players[slotIdx].paid = true;
@@ -1857,7 +1899,16 @@ function handleTournamentEvent(ev) {
       if (settlingInterval) { clearInterval(settlingInterval); settlingInterval = null; }
       showResults(ev);
       break;
-    case 'error': console.error('Tournament error:', ev.message); break;
+    case 'error': {
+      console.error('Tournament error:', ev.message, ev)
+      retroLog('ERROR: ' + ev.message, 'error')
+      if (ev.playerId) {
+        const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0
+        const st = document.getElementById(`status-${slotIdx}`)
+        if (st) { st.textContent = '❌ ' + ev.message; st.style.color = 'var(--red)'; }
+      }
+      break
+    }
   }
 }
 
@@ -2120,5 +2171,39 @@ if (window.fiberquest) { init(); initUpdater(); }
 else console.error('FiberQuest API not available');
 </script>
 
+<!-- ── Retro console (persistent across all views) ── -->
+<div id="retro-console">
+  <span class="rc-toggle" onclick="toggleRetroConsole()" title="hide/show">▼ LOG</span>
+</div>
+
+<script>
+// ── Retro console ────────────────────────────────────────
+const RC_MAX = 120
+let _rcCollapsed = false
+
+function retroLog(msg, level = 'ok') {
+  const el = document.getElementById('retro-console')
+  if (!el) return
+  const ts  = new Date().toLocaleTimeString('en-GB', { hour12: false })
+  const line = document.createElement('div')
+  line.className = 'rc-line ' + level
+  line.textContent = `[${ts}] ${msg}`
+  el.appendChild(line)
+  // trim old lines
+  const lines = el.querySelectorAll('.rc-line')
+  if (lines.length > RC_MAX) lines[0].remove()
+  if (!_rcCollapsed) el.scrollTop = el.scrollHeight
+}
+
+function toggleRetroConsole() {
+  const el  = document.getElementById('retro-console')
+  const tog = el.querySelector('.rc-toggle')
+  _rcCollapsed = !_rcCollapsed
+  el.style.height = _rcCollapsed ? '22px' : ''
+  tog.textContent = (_rcCollapsed ? '▲' : '▼') + ' LOG'
+}
+
+retroLog('FiberQuest ready', 'info')
+</script>
 </body>
 </html>

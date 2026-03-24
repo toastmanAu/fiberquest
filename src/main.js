@@ -518,7 +518,10 @@ function _wireTournamentToRenderer(tm) {
   tm.on('cancelled',         data => { console.log('[TM→UI] cancelled', data);    push('cancelled', data); });
   tm.on('registration_closed', data => { push('registration_closed', data); });
   tm.on('chain_escrow',      data => { push('chain_escrow', data); });
-  tm.on('error',             err  => { console.error('[TM→UI] error', err);       push('error', { message: err.message }); });
+  tm.on('player_connected',  data => { push('player_connected', data); });
+  tm.on('error',             err  => { console.error('[TM→UI] error', err);
+    const msg = err instanceof Error ? err.message : (err?.message || String(err));
+    push('error', { message: msg, playerId: err?.playerId, name: err?.name }); });
 }
 
 // ── ROM discovery ──────────────────────────────────────────────────────────

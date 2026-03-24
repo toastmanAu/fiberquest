@@ -206,11 +206,14 @@ class Tournament extends EventEmitter {
     if (!player) throw new Error(`Unknown player: ${playerId}`)
     if (!this._wallet) throw new Error('Agent wallet not configured')
 
-    const connectUrl = this._wallet.buildJoyIDConnectUrl(({ address }) => {
-      console.log(`[Tournament] JoyID connect callback for ${player.name} — address ${address}`)
+    const connectUrl = this._wallet.buildJoyIDConnectUrl(({ address, keyType }) => {
+      console.log(`[Tournament] JoyID connect callback for ${player.name} — address ${address} keyType ${keyType}`)
+      player.senderAddress = address
+      player.joyidKeyType  = keyType
+      this.emit('player_connected', { playerId, name: player.name, address })
       this.buildPlayerPayTx(playerId, address).catch(e => {
         console.error(`[Tournament] buildPlayerPayTx failed for ${player.name}:`, e.message)
-        this.emit('error', new Error(`Pay tx build failed for ${player.name}: ${e.message}`))
+        this.emit('error', { message: e.message, playerId, name: player.name })
       })
     })
 
@@ -241,8 +244,9 @@ class Tournament extends EventEmitter {
       playerAddress, this.id, player.slotIndex, this.entryFee
     );
 
-    // Register callback — JoyID will redirect phone browser here with signed tx
-    const callbackUrl = this._wallet.registerJoyIDCallback(async (signedTx) => {
+    // Register callback — JoyID redirects back with SignCkbTxResponseData: { tx, state }
+    const callbackUrl = this._wallet.registerJoyIDCallback(async (payload) => {
+      const signedTx = payload?.tx ?? payload;
       console.log(`[Tournament] JoyID callback received for ${player.name} — submitting tx`);
       try {
         const txHash = await this._wallet.sendRawTx(signedTx);
@@ -753,6 +757,7 @@ class TournamentManager extends EventEmitter {
     t.on('invoice',           e => this.emit('invoice',           { tournamentId: t.id, ...e }));
     t.on('player_registered', e => this.emit('player_registered', { tournamentId: t.id, ...e }));
     t.on('connect_qr',        e => this.emit('connect_qr',        { tournamentId: t.id, ...e }));
+    t.on('player_connected',  e => this.emit('player_connected',  { tournamentId: t.id, ...e }));
     t.on('sign_url',          e => this.emit('sign_url',          { tournamentId: t.id, ...e }));
     t.on('deposit_timeout',   e => this.emit('deposit_timeout',   { tournamentId: t.id, ...e }));
     t.on('player_paid',       e => this.emit('player_paid',       { tournamentId: t.id, ...e }));
