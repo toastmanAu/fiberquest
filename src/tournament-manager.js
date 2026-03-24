@@ -750,16 +750,20 @@ class TournamentManager extends EventEmitter {
     this.tournaments.set(t.id, t);
 
     // Bubble events up
-    t.on('invoice',       e => this.emit('invoice',       { tournamentId: t.id, ...e }));
-    t.on('player_paid',   e => this.emit('player_paid',   { tournamentId: t.id, ...e }));
-    t.on('started',       e => this.emit('started',       e));
-    t.on('scores',        e => this.emit('scores',        { tournamentId: t.id, scores: e }));
-    t.on('winner',        e => this.emit('winner',        { tournamentId: t.id, ...e }));
-    t.on('settling',      e => this.emit('settling',      { tournamentId: t.id, ...e }));
-    t.on('payout_needed', e => this.emit('payout_needed', { tournamentId: t.id, ...e }));
-    t.on('payout_sent',   e => this.emit('payout_sent',   { tournamentId: t.id, ...e }));
-    t.on('complete',      e => this.emit('complete',      e));
-    t.on('error',         e => this.emit('error',         e));
+    t.on('invoice',           e => this.emit('invoice',           { tournamentId: t.id, ...e }));
+    t.on('player_registered', e => this.emit('player_registered', { tournamentId: t.id, ...e }));
+    t.on('connect_qr',        e => this.emit('connect_qr',        { tournamentId: t.id, ...e }));
+    t.on('sign_url',          e => this.emit('sign_url',          { tournamentId: t.id, ...e }));
+    t.on('deposit_timeout',   e => this.emit('deposit_timeout',   { tournamentId: t.id, ...e }));
+    t.on('player_paid',       e => this.emit('player_paid',       { tournamentId: t.id, ...e }));
+    t.on('started',           e => this.emit('started',           e));
+    t.on('scores',            e => this.emit('scores',            { tournamentId: t.id, scores: e }));
+    t.on('winner',            e => this.emit('winner',            { tournamentId: t.id, ...e }));
+    t.on('settling',          e => this.emit('settling',          { tournamentId: t.id, ...e }));
+    t.on('payout_needed',     e => this.emit('payout_needed',     { tournamentId: t.id, ...e }));
+    t.on('payout_sent',       e => this.emit('payout_sent',       { tournamentId: t.id, ...e }));
+    t.on('complete',          e => this.emit('complete',          e));
+    t.on('error',             e => this.emit('error',             e));
 
     // Write escrow cell to CKB (async — non-blocking, logs result)
     if (this.chainStore) {
