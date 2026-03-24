@@ -112,11 +112,15 @@ class AgentWallet {
   startCallbackServer () {
     if (this._callbackServer) return  // already running
     this._callbackServer = http.createServer((req, res) => {
+      // Log every incoming request so we can debug callback delivery
+      console.log(`[AgentWallet] Callback server ← ${req.method} ${req.url}`)
       try {
         const url  = new URL(req.url, `http://localhost:${this._callbackPort}`)
         // cbId is in the path; joyid-redirect=true and _data_ are added by JoyID
         const cbId  = url.pathname.replace(/^\/joyid\//, '').replace(/\/$/, '')
         const raw   = url.searchParams.get('_data_')
+
+        console.log(`[AgentWallet] cbId=${cbId} hasHandler=${this._callbackHandlers.has(cbId)} hasData=${!!raw}`)
 
         if (!cbId || !this._callbackHandlers.has(cbId)) {
           res.writeHead(404); res.end('Not found'); return
@@ -215,6 +219,8 @@ class AgentWallet {
     const url     = new URL(`${joyidBase}/auth`)
     url.searchParams.set('type', 'redirect')
     url.searchParams.set('_data_', dataStr)
+    console.log('[AgentWallet] JoyID connect URL (first 200):', url.href.slice(0, 200))
+    console.log('[AgentWallet] Callback URL:', callbackUrl)
     return url.href
   }
 
