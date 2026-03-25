@@ -1435,7 +1435,10 @@ async function startSetup() {
   };
   try {
     currentTournament = await window.fiberquest.tournament.create(opts);
-    await runPreControllerAssignment(opts.players);
+    // Skip controller assignment for distributed — each machine has 1 player
+    if (tournamentType !== 'distributed') {
+      await runPreControllerAssignment(opts.players);
+    }
     showWaitingRoom();
   } catch (e) { alert('Error creating tournament: ' + e.message); }
 }
@@ -1445,7 +1448,10 @@ function showWaitingRoom() {
   const t = currentTournament;
   const n = t.maxPlayers || 2;
   document.getElementById('tourId').textContent     = `ID: ${t.id}`;
-  document.getElementById('waitStatus').textContent = `Waiting for ${n} players...`;
+  const isDistributed = t.tournamentMode === 'distributed';
+  document.getElementById('waitStatus').textContent = isDistributed
+    ? `Distributed — ${n} players needed. Share tournament ID or wait for chain join.`
+    : `Waiting for ${n} players...`;
   document.getElementById('playerSlots').innerHTML  = Array(n).fill(null).map((_, i) => `
     <div class="player-slot" id="slot-${i}">
       <div id="step-name-${i}">
