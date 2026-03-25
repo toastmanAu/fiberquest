@@ -666,6 +666,9 @@ class Tournament extends EventEmitter {
     // Distributed: only update the local player's score from RAM
     if (this.tournamentMode === 'distributed' && this.myPlayerId) {
       const score = decodeScore(ramState, this.gameDef, this.mode);
+      if (score !== this.scores[this.myPlayerId]) {
+        console.log(`[Tournament] Distributed score update: ${score} (state keys: ${Object.keys(ramState).join(',')} vals: ${Object.values(ramState).join(',')})`);
+      }
       this.scores[this.myPlayerId] = score;
       if (this.players[this.myPlayerId]) this.players[this.myPlayerId].score = score;
       return;

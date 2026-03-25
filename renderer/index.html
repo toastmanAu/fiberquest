@@ -1841,6 +1841,8 @@ function waitForUniqueButtonPress(excludePorts) {
 
 // ── Tournament events ─────────────────────────────────────
 function handleTournamentEvent(ev) {
+  // Ignore events from other tournaments (stale cancelled events etc)
+  if (ev.tournamentId && currentTournament?.id && ev.tournamentId !== currentTournament.id) return;
   switch (ev.event) {
     case 'started': retroLog('Tournament started — GO!', 'ok'); showLive(ev); break;
     case 'connect_qr': {
