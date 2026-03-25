@@ -398,47 +398,52 @@ class Tournament extends EventEmitter {
   async pollPayments() {
     if (this.state !== 'WAITING_PLAYERS') return;
 
-    // ── Distributed: scan chain cell for remote player deposits ──────────
-    if (this.tournamentMode === 'distributed' && this._chainStore) {
+    // ── Distributed: scan organizer's cells for deposit markers from remote players ──
+    if (this.tournamentMode === 'distributed' && this._wallet) {
       try {
-        const cells = await this._chainStore.scanTournaments(this.id);
-        if (cells.length > 0) {
-          const cell = cells[0];
-          const onChainPlayers = cell.players || [];
-          for (const cp of onChainPlayers) {
-            // Discover remote players we don't know about yet
-            if (!this.players[cp.id] && cp.paid) {
-              this.players[cp.id] = {
-                name: cp.name || cp.id,
-                slotIndex: Object.keys(this.players).length,
+        const { depositDataMarker } = require('./agent-wallet');
+        // Scan for deposit markers for each slot we don't know is paid
+        for (let slot = 0; slot < this.maxPlayers; slot++) {
+          const marker = depositDataMarker(this.id, slot);
+          const existingPlayer = Object.values(this.players).find(p => p.slotIndex === slot);
+          if (existingPlayer?.paid) continue; // already confirmed
+
+          const cell = await this._wallet.findDepositByMarker(marker);
+          if (cell) {
+            const pid = existingPlayer ? Object.keys(this.players).find(k => this.players[k].slotIndex === slot) : `remote-${slot}`;
+            if (!existingPlayer) {
+              // Discovered a remote player's deposit
+              this.players[pid] = {
+                name: `Player ${slot + 1} (remote)`,
+                slotIndex: slot,
                 paid: true,
                 score: 0,
                 joinedAt: Date.now(),
-                fiberPeerId: cp.fiberPeerId || null,
-                fiberAddr: cp.fiberAddr || null,
+                depositCell: cell,
                 senderAddress: null,
                 payoutInvoice: null,
                 entryInvoice: null,
                 paymentHash: null,
+                fiberPeerId: null,
+                fiberAddr: null,
               };
-              this.scores[cp.id] = 0;
-              console.log(`[Tournament] Discovered remote player: ${cp.name || cp.id} (paid ✅)`);
-              this.emit('player_paid', { playerId: cp.id, name: cp.name || cp.id });
-            }
-            // Mark known players as paid if chain shows them paid
-            if (this.players[cp.id] && !this.players[cp.id].paid && cp.paid) {
-              this.players[cp.id].paid = true;
-              console.log(`[Tournament] Remote player ${cp.id} confirmed paid via chain`);
-              this.emit('player_paid', { playerId: cp.id, name: this.players[cp.id].name });
+              this.scores[pid] = 0;
+              console.log(`[Tournament] Discovered remote deposit for slot ${slot} — marker ${marker.slice(0, 30)}...`);
+              this.emit('player_paid', { playerId: pid, name: `Player ${slot + 1} (remote)` });
+            } else {
+              existingPlayer.paid = true;
+              existingPlayer.depositCell = cell;
+              console.log(`[Tournament] Deposit confirmed for slot ${slot} (${existingPlayer.name})`);
+              this.emit('player_paid', { playerId: pid, name: existingPlayer.name });
             }
           }
-          // Check if all slots filled and paid
-          const paidCount = Object.values(this.players).filter(p => p.paid).length;
-          if (paidCount >= this.maxPlayers) {
-            console.log('[Tournament] All players paid (distributed) — starting');
-            this.start().catch(e => this.emit('error', e));
-            return;
-          }
+        }
+        // Check if all slots filled and paid
+        const paidCount = Object.values(this.players).filter(p => p.paid).length;
+        if (paidCount >= this.maxPlayers) {
+          console.log('[Tournament] All players paid (distributed) — starting');
+          this.start().catch(e => this.emit('error', e));
+          return;
         }
       } catch (e) {
         // Non-fatal — will retry next poll
