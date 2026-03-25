@@ -445,7 +445,7 @@ function setupIPC() {
       return { ok: false, reason: `Game not found: ${gameId}` };
     }
 
-    const romPath = _findRom(game.rom_name);
+    const romPath = _findRom(game.rom_name, game.system || game.platform);
     console.log(`[Main] ROM lookup: ${game.rom_name} → ${romPath || 'NOT FOUND'}`);
     if (!romPath) return { ok: false, reason: `ROM not found: ${game.rom_name}` };
 
@@ -610,7 +610,7 @@ function setupTournamentIPC() {
         .filter(f => f.endsWith('.json'))
         .map(f => {
           const game = JSON.parse(fs.readFileSync(path.join(gamesDir, f), 'utf8'));
-          game.romAvailable = !!_findRom(game.rom_name);
+          game.romAvailable = !!_findRom(game.rom_name, game.system || game.platform);
           return game;
         });
     } catch (e) {
@@ -752,13 +752,37 @@ function _romSearchDirs() {
   return [...new Set(dirs)];
 }
 
-function _findRom(romName) {
+function _findRom(romName, system) {
   if (!romName) return null;
   // Base name without extension for fuzzy matching
   const baseName = path.basename(romName, path.extname(romName)).toLowerCase();
   const compressedExts = ['.7z', '.zip', '.gz'];
 
-  for (const dir of _romSearchDirs()) {
+  // Build search dirs — prioritize system-specific subdir (e.g. ~/roms/snes/)
+  const allDirs = _romSearchDirs();
+  const systemAliases = {
+    snes: ['snes', 'super nintendo', 'super_nes'],
+    nes: ['nes', 'famicom'],
+    gba: ['gba', 'gameboy advance'],
+    md: ['megadrive', 'genesis', 'md'],
+    sms: ['mastersystem', 'sms', 'master system'],
+    arcade: ['arcade', 'mame', 'fbneo'],
+    n64: ['n64', 'nintendo 64'],
+  };
+  const aliases = systemAliases[system] || [system];
+  const priorityDirs = [];
+  const otherDirs = [];
+  for (const dir of allDirs) {
+    const dirName = path.basename(dir).toLowerCase();
+    if (system && aliases.some(a => dirName.includes(a))) {
+      priorityDirs.push(dir);
+    } else {
+      otherDirs.push(dir);
+    }
+  }
+  const searchDirs = [...priorityDirs, ...otherDirs];
+
+  for (const dir of searchDirs) {
     // Exact match
     const exact = path.join(dir, romName);
     try { if (fs.existsSync(exact)) return exact; } catch (_) {}

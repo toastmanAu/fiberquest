@@ -25,11 +25,10 @@ fi
 # Ensure XDG_RUNTIME_DIR is set (needed by Electron + flatpak)
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$RUNTIME_DIR}"
 
-# ── Electron flags for Wayland ────────────────────────────────
+# ── Electron flags ─────────────────────────────────────────────
+# Electron auto-detects Wayland/X11 via the env vars we set above.
+# --no-sandbox needed on some ARM/Pi setups where the Chrome sandbox fails.
 ELECTRON_FLAGS=""
-if [ -n "$WAYLAND_DISPLAY" ]; then
-  ELECTRON_FLAGS="--ozone-platform=wayland --enable-features=WaylandWindowDecorations"
-fi
 
 # ── Launch ────────────────────────────────────────────────────
 exec npx electron $ELECTRON_FLAGS .
