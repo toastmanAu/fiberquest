@@ -513,6 +513,13 @@ function setupIPC() {
       const activeTournament = tournamentManager?.getActive?.();
       if (activeTournament && activeTournament.gameId === gameId) {
         activeSession.linkTournament(activeTournament.id);
+        // Share RAM engine with the tournament so it gets score updates
+        activeTournament._sharedRamEngine = activeRamEngine;
+        activeRamEngine.on('game_event', ({ event, state }) => {
+          activeTournament._onGameEvent(event, state);
+        });
+        activeRamEngine.on('state_update', (state) => activeTournament._checkRoundGate?.(state));
+        console.log(`[Main] Shared RAM engine with active tournament ${activeTournament.id}`);
       }
 
       activeRamEngine.on('game_event', ({ event, state }) => {
@@ -673,6 +680,11 @@ function setupTournamentIPC() {
       organizerAddress: cell.organizerAddress,
     });
     t._organizerAddress = cell.organizerAddress;
+
+    // Share the active RAM engine if game is already running
+    if (activeRamEngine && cell.gameId === activeRamEngine.gameDef?.id) {
+      t._sharedRamEngine = activeRamEngine;
+    }
 
     // Auto-register this player with the correct slot index
     await t.addPlayer(myPlayerId, myName, { slotIndex: mySlotIndex });
