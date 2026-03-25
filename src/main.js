@@ -470,7 +470,13 @@ function setupIPC() {
       // the launch command to a file. A separate watcher script (ra-watcher.sh)
       // picks it up and launches RetroArch from a clean process tree.
       // Start watcher: ./scripts/ra-watcher.sh (run in a separate terminal)
-      const launchCmd = `flatpak run org.libretro.RetroArch -L "${game.core}" "${romPath}"`;
+      // Build launch command with display env vars for Wayland/X11 compatibility
+      const displayEnv = [];
+      if (process.env.WAYLAND_DISPLAY) displayEnv.push(`WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY}`);
+      if (process.env.DISPLAY) displayEnv.push(`DISPLAY=${process.env.DISPLAY}`);
+      if (process.env.XDG_RUNTIME_DIR) displayEnv.push(`XDG_RUNTIME_DIR=${process.env.XDG_RUNTIME_DIR}`);
+      const envPrefix = displayEnv.length ? displayEnv.join(' ') + ' ' : '';
+      const launchCmd = `${envPrefix}flatpak run org.libretro.RetroArch -L "${game.core}" "${romPath}"`;
       fs.writeFileSync('/tmp/fq-ra-launch.cmd', launchCmd);
       console.log(`[Main] RetroArch launch queued: ${game.name || gameId}`);
 

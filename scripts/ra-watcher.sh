@@ -27,7 +27,16 @@ while true; do
     CMD=$(cat "$CMDFILE")
     rm -f "$CMDFILE"
     echo "[ra-watcher] Launching: $CMD"
-    eval "$CMD" &
+    echo "[ra-watcher] WAYLAND_DISPLAY=$WAYLAND_DISPLAY DISPLAY=$DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+    eval "$CMD" > /tmp/ra-launch.log 2>&1 &
+    RA_PID=$!
+    sleep 2
+    if kill -0 $RA_PID 2>/dev/null; then
+      echo "[ra-watcher] RetroArch started (PID $RA_PID)"
+    else
+      echo "[ra-watcher] RetroArch failed to start. Log:"
+      cat /tmp/ra-launch.log 2>/dev/null
+    fi
   fi
   sleep 1
 done
