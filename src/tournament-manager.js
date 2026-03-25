@@ -785,34 +785,34 @@ class Tournament extends EventEmitter {
    * Submit this agent's local score data on-chain (distributed mode).
    */
   async _submitMyScore() {
-    console.log(`[Tournament] _submitMyScore: myPlayerId=${this.myPlayerId} chainStore=${!!this._chainStore} wallet=${!!this._chainStore?.wallet}`);
     if (!this.myPlayerId) { console.warn('[Tournament] No myPlayerId — skipping score submit'); return; }
-    if (!this._chainStore) { console.warn('[Tournament] No chainStore — skipping score submit'); return; }
-    if (!this._chainStore.wallet) { console.warn('[Tournament] ChainStore has no wallet — score submit will fail on write'); }
+    if (!this._wallet && !this._chainStore?.wallet) {
+      console.warn('[Tournament] No wallet — score cell cannot be written');
+      return;
+    }
+    const wallet = this._wallet || this._chainStore?.wallet;
     const crypto = require('crypto');
     const score = this.scores[this.myPlayerId] || 0;
     const koCount = this._koCount?.[this.myPlayerId] || 0;
 
-    // Hash the session's event log for verifiability
     const sessionEvents = (this._sessionEvents || []).map(e => `${e.id}:${e.t}`).join('|');
     const eventLogHash = '0x' + crypto.createHash('sha256').update(sessionEvents).digest('hex');
 
     const scoreData = { score, koCount, eventLogHash };
     this.scoreSubmissions[this.myPlayerId] = { ...scoreData, submittedAt: Date.now() };
 
-    // Find the tournament cell on-chain
-    const cells = await this._chainStore.scanTournaments(this.id);
-    if (cells.length === 0) {
-      console.warn('[Tournament] No on-chain cell found — score not submitted');
-      return;
+    // Write score as a standalone cell — no contention with tournament cell
+    if (!this._chainStore) {
+      const { ChainStore } = require('./chain-store');
+      this._chainStore = new ChainStore({ wallet });
     }
-    const cell = cells[0];
     try {
-      const result = await this._chainStore.submitScore(cell.outPoint, cell, this.myPlayerId, scoreData);
-      console.log(`[Tournament] ✅ Score submitted on-chain for ${this.myPlayerId}: score=${score} KOs=${koCount} tx=${result.txHash}`);
+      const organizerAddr = this._organizerAddress || wallet.address;
+      const result = await this._chainStore.submitScoreCell(wallet, this.id, this.myPlayerId, scoreData, organizerAddr);
+      console.log(`[Tournament] ✅ Score cell on-chain: ${this.myPlayerId} score=${score} tx=${result.txHash}`);
       return result;
     } catch (e) {
-      console.error(`[Tournament] ❌ Score submission failed: ${e.message}`);
+      console.error(`[Tournament] ❌ Score cell write failed: ${e.message}`);
     }
   }
 
@@ -866,20 +866,26 @@ class Tournament extends EventEmitter {
         const cells = await this._chainStore?.scanTournaments(this.id);
         if (!cells?.length) return;
         const cell = cells[0];
-        if (cell.scoreSubmissions) {
-          // Merge any new submissions we haven't seen
-          for (const [pid, sub] of Object.entries(cell.scoreSubmissions)) {
-            if (!this.scoreSubmissions[pid]) {
-              this.scoreSubmissions[pid] = sub;
-              console.log(`[Tournament] Chain poll: found score for ${pid} — score=${sub.score}`);
-            }
-          }
-          // Check if all submitted
-          const allSubmitted = Object.keys(this.players).every(pid => this.scoreSubmissions[pid]);
-          if (allSubmitted && this.state === 'SETTLING') {
-            clearInterval(this._distributedPollInterval);
-            console.log('[Tournament] All scores found on-chain — resolving winner');
-            this._resolveDistributedWinner();
+        // Scan for per-agent score cells (not the tournament cell's scoreSubmissions)
+        if (this.state === 'SETTLING') {
+          const wallet = this._wallet || this._chainStore?.wallet;
+          if (wallet) {
+            try {
+              const organizerAddr = this._organizerAddress || wallet.address;
+              const scoreCells = await this._chainStore.scanScoreCells(wallet, this.id, organizerAddr);
+              for (const sc of scoreCells) {
+                if (!this.scoreSubmissions[sc.playerId]) {
+                  this.scoreSubmissions[sc.playerId] = sc;
+                  console.log(`[Tournament] Chain: found score cell for ${sc.playerId} — score=${sc.score}`);
+                }
+              }
+              const allSubmitted = Object.keys(this.players).every(pid => this.scoreSubmissions[pid]);
+              if (allSubmitted) {
+                clearInterval(this._distributedPollInterval);
+                console.log('[Tournament] All scores on-chain — resolving winner');
+                this._resolveDistributedWinner();
+              }
+            } catch (_) {}
           }
         }
         // Detect state changes from organizer (only fire once)

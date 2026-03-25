@@ -295,21 +295,79 @@ class ChainStore {
   }
 
   /**
-   * Submit a player's score to the tournament cell (distributed mode).
-   * Reads the current cell, merges the score submission, writes back.
+   * Submit a player's score as a standalone cell on-chain.
+   * Each agent writes their OWN score cell — no cell contention.
+   * Data format: JSON with tournamentId, playerId, score, koCount, eventLogHash
+   * All agents scan for these cells to discover scores.
    */
-  async submitScore (outPoint, tournament, playerId, scoreData) {
-    const submissions = tournament.scoreSubmissions || {}
-    submissions[playerId] = {
+  /**
+   * Submit a player's score as a standalone cell on-chain.
+   * Sent to the ORGANISER's address so all agents can find it by scanning
+   * the organiser's cells (same discovery pattern as deposits).
+   * Data: JSON with type:'fq_score', tournamentId, playerId, score
+   */
+  async submitScoreCell (wallet, tournamentId, playerId, scoreData, organizerAddress) {
+    if (!wallet) throw new Error('Wallet required to submit score cell')
+    const payload = JSON.stringify({
+      type: 'fq_score',
+      tournamentId,
+      playerId,
       score:        scoreData.score,
       koCount:      scoreData.koCount || 0,
       eventLogHash: scoreData.eventLogHash || null,
       submittedAt:  Date.now()
-    }
-    return this.updateCell(outPoint, {
-      ...tournament,
-      scoreSubmissions: submissions
     })
+    const data = '0x' + Buffer.from(payload).toString('hex')
+    const dataBytes = BigInt(payload.length)
+    const minCapacity = (61n + dataBytes) * 100_000_000n
+    const capacity = minCapacity > 6200000000n ? minCapacity : 6200000000n
+
+    // Send to organiser's address (or own address if we ARE the organiser)
+    const destLock = organizerAddress
+      ? require('@nervosnetwork/ckb-sdk-utils').addressToScript(organizerAddress)
+      : wallet.lockScript
+
+    const outputs = [{
+      capacity: `0x${capacity.toString(16)}`,
+      lock: destLock
+    }]
+    const signedTx = await wallet.buildAndSignTx({
+      outputs,
+      outputsData: [data]
+    })
+    const txHash = await wallet.sendRawTx(signedTx)
+    console.log(`[ChainStore] Score cell submitted: ${txHash} (${playerId}: ${scoreData.score})`)
+    return { txHash }
+  }
+
+  /**
+   * Scan organiser's cells for score submissions matching a tournament ID.
+   * All agents write score cells to the organiser's address, so scanning
+   * organiser cells finds ALL scores.
+   */
+  async scanScoreCells (wallet, tournamentId, organizerAddress) {
+    if (!wallet) return []
+    // Scan organiser's cells (where all score cells are sent)
+    let cells
+    if (organizerAddress && organizerAddress !== wallet.address) {
+      const utils = require('@nervosnetwork/ckb-sdk-utils')
+      const lock = utils.addressToScript(organizerAddress)
+      cells = await wallet.getCellsForLock(lock, 200)
+    } else {
+      cells = await wallet.getLiveCells(200)
+    }
+    const scores = []
+    for (const cell of cells) {
+      if (!cell.outputData || cell.outputData === '0x') continue
+      try {
+        const json = Buffer.from(cell.outputData.slice(2), 'hex').toString()
+        const parsed = JSON.parse(json)
+        if (parsed.type === 'fq_score' && parsed.tournamentId === tournamentId) {
+          scores.push(parsed)
+        }
+      } catch (_) {}
+    }
+    return scores
   }
 
   /**
