@@ -558,23 +558,37 @@ class Tournament extends EventEmitter {
       timeLimitMs: this.timeLimitMs,
     });
 
-    // Update chain cell to ACTIVE with a future startsAt timestamp
-    // All agents sync their timers to this timestamp — no offset between machines
+    // Write all phase timestamps to chain — every agent syncs to these
     if (this._chainStore && this.tournamentMode === 'distributed') {
-      const SYNC_DELAY_MS = 30000; // 30s grace for chain confirmation + polling
-      const startsAt = Date.now() + SYNC_DELAY_MS;
-      this._startsAt = startsAt;
+      const SYNC_DELAY_MS = 30000;  // 30s for chain confirmation + polling
+      const SUBMISSION_WINDOW_MS = 60000; // 60s to submit scores after game ends
 
-      // Reset our own timer to fire from the synced start time
+      const startsAt           = Date.now() + SYNC_DELAY_MS;
+      const endsAt             = startsAt + this.timeLimitMs;
+      const submissionDeadline = endsAt + SUBMISSION_WINDOW_MS;
+      const resolvesAt         = submissionDeadline;
+
+      this._startsAt           = startsAt;
+      this._endsAt             = endsAt;
+      this._submissionDeadline = submissionDeadline;
+      this._resolvesAt         = resolvesAt;
+
+      // Set our timer to the synced end time
       clearTimeout(this._timer);
       this._startedAt = startsAt;
-      this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs + SYNC_DELAY_MS);
-      console.log(`[Tournament] Synced start: ${new Date(startsAt).toISOString()} (in ${SYNC_DELAY_MS/1000}s)`);
+      this._timer = setTimeout(() => this._endTournament('time_limit'), endsAt - Date.now());
+
+      console.log(`[Tournament] Phase timestamps:`);
+      console.log(`  startsAt:           ${new Date(startsAt).toISOString()} (in ${SYNC_DELAY_MS/1000}s)`);
+      console.log(`  endsAt:             ${new Date(endsAt).toISOString()}`);
+      console.log(`  submissionDeadline: ${new Date(submissionDeadline).toISOString()}`);
+      console.log(`  resolvesAt:         ${new Date(resolvesAt).toISOString()}`);
 
       this._chainStore.scanTournaments(this.id).then(cells => {
         if (cells[0]) {
           this._chainStore.activateTournament(cells[0].outPoint, {
-            ...cells[0], ...this._chainData(), startsAt
+            ...cells[0], ...this._chainData(),
+            startsAt, endsAt, submissionDeadline, resolvesAt
           })
             .then(r => console.log(`[Tournament] Chain cell updated to ACTIVE: ${r.txHash}`))
             .catch(e => console.warn(`[Tournament] Chain ACTIVE update failed: ${e.message}`));
@@ -904,11 +918,24 @@ class Tournament extends EventEmitter {
         // Detect state changes from organizer (only fire once)
         if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') && !this._distributedStarted) {
           this._distributedStarted = true;
-          const startsAt = cell.startsAt || Date.now();
-          const waitMs = Math.max(0, startsAt - Date.now());
-          console.log(`[Tournament] Chain: ACTIVE — synced start in ${Math.round(waitMs/1000)}s`);
 
-          // Wait until the synced start time, then start
+          // Read all phase timestamps from chain
+          const startsAt           = cell.startsAt || Date.now();
+          const endsAt             = cell.endsAt || (startsAt + this.timeLimitMs);
+          const submissionDeadline = cell.submissionDeadline || (endsAt + 60000);
+          const resolvesAt         = cell.resolvesAt || submissionDeadline;
+
+          this._startsAt           = startsAt;
+          this._endsAt             = endsAt;
+          this._submissionDeadline = submissionDeadline;
+          this._resolvesAt         = resolvesAt;
+
+          const waitMs = Math.max(0, startsAt - Date.now());
+          console.log(`[Tournament] Chain: ACTIVE — phases:`);
+          console.log(`  starts in ${Math.round(waitMs/1000)}s, ends at ${new Date(endsAt).toISOString()}`);
+          console.log(`  submission deadline: ${new Date(submissionDeadline).toISOString()}`);
+
+          // Wait until synced start, then launch
           setTimeout(() => {
             this._startedAt = startsAt;
             this.emit('started', {
@@ -920,13 +947,14 @@ class Tournament extends EventEmitter {
             });
             this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
           }, waitMs);
+
+          // Set timer to fire at endsAt — same moment as organiser
+          const endDelay = Math.max(0, endsAt - Date.now());
+          this._timer = setTimeout(() => this._endTournament('time_limit'), endDelay);
+          console.log(`[Tournament] Timer set: game ends in ${Math.round(endDelay/1000)}s`);
         }
-        // Detect tournament settling — submit our score
-        if (cell.state === 'SETTLING' && this.state === 'ACTIVE') {
-          console.log(`[Tournament] Chain: tournament is SETTLING — submitting score`);
-          this._endTournament('time_limit');
-        }
-        // Detect tournament complete — show results directly
+
+        // Detect tournament complete — show results
         if (cell.state === 'COMPLETE' && this.state !== 'COMPLETE' && this.state !== 'PAYING') {
           console.log(`[Tournament] Chain: tournament COMPLETE — winner: ${cell.winner}`);
           clearInterval(this._distributedPollInterval);
@@ -972,8 +1000,10 @@ class Tournament extends EventEmitter {
       // Step 3: Poll chain aggressively for all scores (every 5s during settling)
       this.startDistributedPolling(5000);
 
-      // Step 4: Timeout — resolve with whatever we have (2 minutes to allow chain sync)
-      const SETTLEMENT_TIMEOUT_MS = 120000; // 2 minutes
+      // Step 4: Resolve at submissionDeadline — same moment on all agents
+      const deadline = this._submissionDeadline || (Date.now() + 120000);
+      const resolveDelay = Math.max(10000, deadline - Date.now()); // at least 10s
+      console.log(`[Tournament] Will resolve in ${Math.round(resolveDelay/1000)}s (submission deadline)`);
       setTimeout(() => {
         if (this.state === 'SETTLING') {
           console.log('[Tournament] Settlement timeout (2min) — resolving with available data');

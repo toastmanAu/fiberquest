@@ -109,6 +109,11 @@ class ChainStore {
       scoreSubmissions:     tournament.scoreSubmissions || null, // { playerId: { score, koCount, eventLogHash, submittedAt } }
       winnerInvoice:        tournament.winnerInvoice || null,    // Fiber invoice for losers to pay winner
       organizerAddress:     tournament.organizerAddress || null, // CKB address for player deposits (distributed)
+      // Distributed tournament phase timestamps (all agents sync to these)
+      startsAt:             tournament.startsAt || null,         // all agents start playing
+      endsAt:               tournament.endsAt || null,           // all agents stop playing
+      submissionDeadline:   tournament.submissionDeadline || null, // score cells must be on-chain by here
+      resolvesAt:           tournament.resolvesAt || null,       // all agents resolve winner from chain data
     }
     const json = Buffer.from(JSON.stringify(payload))
     return '0x' + Buffer.concat([MAGIC, Buffer.from([VERSION]), json]).toString('hex')
