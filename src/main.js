@@ -13,6 +13,8 @@ const GameServer = require('./game-server');
 const FiberClient = require('./fiber-client');
 const { TournamentManager } = require('./tournament-manager');
 const { detectAll, pickBestNode, pickBestCkbNode, startNodeService, launchInstaller } = require('./fiber-setup');
+const { RamEngine } = require('./ram-engine');
+const { SessionLogger, TournamentLogger } = require('./session-logger');
 
 // ── Secure key storage ──────────────────────────────────────────────────────
 
@@ -74,7 +76,7 @@ const CONFIG_DEFAULTS = {
   defaultRegistrationMinutes:  10,
   settlementBufferSec:         30,
   devMode:                     false,
-  retroarchBin:                'retroarch',
+  retroarchBin:                path.join(__dirname, '../scripts/launch-retroarch.sh'),
   romsDir:                     '',
 };
 
@@ -113,6 +115,8 @@ let gameServer;
 let fiberClient;
 let tournamentManager;
 let agentWallet = null;
+let activeRamEngine  = null;   // Always-on RAM engine (started on game launch)
+let activeSession    = null;   // SessionLogger for current game session
 
 // ── Window ─────────────────────────────────────────────────────────────────
 
@@ -331,7 +335,7 @@ function setupIPC() {
   // QR code generation
   ipcMain.handle('qr:generate', async (_, text) => {
     const QRCode = require('qrcode');
-    return QRCode.toDataURL(text, { errorCorrectionLevel: 'L', margin: 1, color: { dark: '#000000', light: '#ffffff' } });
+    return QRCode.toDataURL(text, { errorCorrectionLevel: 'L', margin: 1, scale: 10, color: { dark: '#000000', light: '#ffffff' } });
   });
 
   // RetroArch check / first-run setup
@@ -376,6 +380,40 @@ function setupIPC() {
     return { canceled: false, romsDir };
   });
 
+  // ── RetroArch config patcher ─────────────────────────────────────────────
+  // Ensures settings required by FiberQuest are applied before each launch.
+  function _patchRetroArchConfig() {
+    const candidates = [
+      path.join(process.env.HOME || '', '.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg'),  // flatpak
+      path.join(process.env.HOME || '', '.config/retroarch/retroarch.cfg'),  // native
+    ];
+    const cfgPath = candidates.find(p => fs.existsSync(p));
+    if (!cfgPath) { console.warn('[Main] RetroArch config not found, skipping patch'); return; }
+
+    let cfg = fs.readFileSync(cfgPath, 'utf8');
+    const patches = {
+      'pause_nonactive': '"false"',
+      'network_cmd_enable': '"true"',
+      'network_cmd_port': '"55355"',
+    };
+    let changed = false;
+    for (const [key, val] of Object.entries(patches)) {
+      const re = new RegExp(`^${key}\\s*=\\s*".*"`, 'm');
+      if (re.test(cfg)) {
+        const before = cfg;
+        cfg = cfg.replace(re, `${key} = ${val}`);
+        if (cfg !== before) changed = true;
+      } else {
+        cfg += `\n${key} = ${val}`;
+        changed = true;
+      }
+    }
+    if (changed) {
+      fs.writeFileSync(cfgPath, cfg);
+      console.log(`[Main] RetroArch config patched: ${Object.keys(patches).join(', ')}`);
+    }
+  }
+
   // RetroArch launch (only when RetroArch is local)
   ipcMain.handle('retroarch:isLocal', () => {
     const h = CONFIG.retroarchHost;
@@ -402,17 +440,70 @@ function setupIPC() {
     if (!romPath) return { ok: false, reason: `ROM not found: ${game.rom_name}` };
 
     const { spawn } = require('child_process');
-    // Launch via bash in a new session to escape Electron's GPU process group
-    const cmd = `${CONFIG.retroarchBin} -L "${game.core}" "${romPath}" > /tmp/retroarch-launch.log 2>&1`;
+    const dgram = require('dgram');
 
     try {
-      const child = spawn('bash', ['-c', cmd], {
-        detached: true,
-        stdio: 'ignore',
-        env: { ...process.env },
+      // Ensure RetroArch config is set for FiberQuest (no pause on unfocus, UDP enabled)
+      _patchRetroArchConfig();
+
+      // Use flatpak RetroArch (1.22.2) — the PPA 1.21.0 segfaults with -L.
+      // Strip Electron/npm env vars that can interfere with flatpak sandbox.
+      const cleanEnv = {};
+      for (const [k, v] of Object.entries(process.env)) {
+        if (!k.startsWith('ELECTRON_') && !k.startsWith('CHROME_') && !k.startsWith('npm_') &&
+            k !== 'NODE_ENV' && k !== 'NODE' && k !== 'INIT_CWD') {
+          cleanEnv[k] = v;
+        }
+      }
+      // Electron's Chromium runtime causes RetroArch to SIGSEGV when spawned
+      // as a child process (any method: spawn, exec, fork). Workaround: write
+      // the launch command to a file. A separate watcher script (ra-watcher.sh)
+      // picks it up and launches RetroArch from a clean process tree.
+      // Start watcher: ./scripts/ra-watcher.sh (run in a separate terminal)
+      const launchCmd = `flatpak run org.libretro.RetroArch -L "${game.core}" "${romPath}"`;
+      fs.writeFileSync('/tmp/fq-ra-launch.cmd', launchCmd);
+      console.log(`[Main] RetroArch launch queued: ${game.name || gameId}`);
+
+      // Stop any existing RAM engine session
+      if (activeRamEngine) { activeRamEngine.stop(); activeRamEngine = null; }
+      if (activeSession) { activeSession.close('new_game_launched'); activeSession = null; }
+
+      // Start always-on RAM engine + session logger for this game
+      activeSession = new SessionLogger(gameId);
+      activeRamEngine = new RamEngine({
+        raHost: CONFIG.retroarchHost,
+        raPort: CONFIG.retroarchUdp,
       });
-      child.unref();
-      console.log(`[Main] RetroArch spawned via bash, PID=${child.pid}`);
+      activeRamEngine.loadGame(gameId);
+
+      // Link to active tournament if one exists for this game
+      const activeTournament = tournamentManager?.getActive?.();
+      if (activeTournament && activeTournament.gameId === gameId) {
+        activeSession.linkTournament(activeTournament.id);
+      }
+
+      activeRamEngine.on('game_event', ({ event, state }) => {
+        activeSession.logGameEvent(event, state);
+        if (mainWindow) mainWindow.webContents.send('ram:event', { eventId: event.id, state });
+      });
+
+      // Log RAM state changes (throttled — every 50th change to avoid huge files)
+      let stateLogCount = 0;
+      activeRamEngine.on('state_update', (state) => {
+        if (++stateLogCount % 50 === 0) activeSession.logRamState(state);
+        if (mainWindow) mainWindow.webContents.send('ram:state', state);
+      });
+
+      // Delayed start — give RetroArch a few seconds to boot + load core
+      setTimeout(async () => {
+        try {
+          await activeRamEngine.start();
+          console.log(`[Main] RAM engine polling ${game.name || gameId}`);
+        } catch (e) {
+          console.warn(`[Main] RAM engine failed to start: ${e.message}`);
+        }
+      }, 4000);
+
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: e.message };
@@ -433,6 +524,12 @@ function setupTournamentIPC() {
       ...opts,
     };
     const t = await tournamentManager.create(merged);
+    // Share the always-on RAM engine so tournament doesn't create a duplicate
+    if (activeRamEngine && merged.gameId === activeRamEngine.gameDef?.id) {
+      t._sharedRamEngine = activeRamEngine;
+    }
+    // Link session logger to tournament
+    if (activeSession) activeSession.linkTournament(t.id);
     tournamentManager.startPaymentPolling(3000);
     return t.status();
   });
@@ -594,6 +691,30 @@ function _initChainStore(wallet) {
   return new ChainStore({ wallet, rpcUrl: CONFIG.ckbRpcUrl });
 }
 
+// ── RetroArch launch watcher ──────────────────────────────────────────────
+// ra-watcher.sh polls /tmp/fq-ra-launch.cmd and launches RetroArch outside
+// Electron's process tree (avoids SIGSEGV from Chromium GPU sandbox).
+let _raWatcherProc = null;
+function _startRaWatcher() {
+  const watcherScript = path.join(__dirname, '..', 'scripts', 'ra-watcher.sh');
+  if (!fs.existsSync(watcherScript)) {
+    console.warn('[Main] ra-watcher.sh not found, RetroArch launch disabled');
+    return;
+  }
+  const { spawn } = require('child_process');
+  _raWatcherProc = spawn('bash', [watcherScript], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  _raWatcherProc.stdout.on('data', d => console.log(`[ra-watcher] ${d.toString().trim()}`));
+  _raWatcherProc.stderr.on('data', d => console.warn(`[ra-watcher] ${d.toString().trim()}`));
+  _raWatcherProc.unref();
+  console.log(`[Main] ra-watcher started (PID ${_raWatcherProc.pid})`);
+}
+app.on('will-quit', () => {
+  if (_raWatcherProc) { try { process.kill(-_raWatcherProc.pid); } catch (_) {} }
+});
+
 app.whenReady().then(async () => {
   // Auto-detect local Fiber + CKB nodes if running on defaults (no saved config)
   try {
@@ -638,12 +759,17 @@ app.whenReady().then(async () => {
     fiberRpc:       CONFIG.fiberRpcUrl,
     fiberAuthToken: CONFIG.fiberAuthToken,
     wallet:         agentWallet || undefined,
+    raHost:         CONFIG.retroarchHost,
+    raPort:         CONFIG.retroarchUdp,
   });
   _wireTournamentToHMI(tournamentManager);
 
   // Setup IPC
   setupIPC();
   setupTournamentIPC();
+
+  // Start RetroArch launch watcher (file-based IPC to avoid Electron SIGSEGV)
+  _startRaWatcher();
 
   // Create window
   createWindow();

@@ -21,6 +21,7 @@
     "release:arm64": "electron-builder --linux --arm64 --publish always"
   },
   "dependencies": {
+    "@joyid/ckb": "^1.1.4",
     "@nervosnetwork/ckb-sdk-core": "^0.109.5",
     "@nervosnetwork/ckb-sdk-utils": "^0.109.5",
     "electron-updater": "^6.3.0",

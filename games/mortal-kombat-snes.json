@@ -3,7 +3,7 @@
   "name": "Mortal Kombat",
   "system": "snes",
   "rom_name": "Mortal Kombat (USA).sfc",
-  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/snes9x_libretro.so",
   "description": "The original controversy. HP-based fighting tournament — last health standing wins the round.",
 
   "ram_addresses": {
@@ -24,10 +24,51 @@
     }
   },
 
+  "events": [
+    {
+      "id": "p1_ko",
+      "description": "P1 knocked out (health reached zero)",
+      "trigger": { "address": "p1_health", "condition": "reached_zero" },
+      "guard": { "address": "timer", "condition": "above", "value": 0 },
+      "payment": { "direction": "to_p2", "amount_ckb": 1 }
+    },
+    {
+      "id": "p2_ko",
+      "description": "P2 knocked out (health reached zero)",
+      "trigger": { "address": "p2_health", "condition": "reached_zero" },
+      "guard": { "address": "timer", "condition": "above", "value": 0 },
+      "payment": { "direction": "to_p1", "amount_ckb": 1 }
+    },
+    {
+      "id": "p1_hit",
+      "description": "P1 took damage",
+      "trigger": { "address": "p1_health", "condition": "decreased_by_more_than", "value": 0 },
+      "guard": { "address": "timer", "condition": "above", "value": 0 },
+      "payment": null
+    },
+    {
+      "id": "p2_hit",
+      "description": "P2 took damage",
+      "trigger": { "address": "p2_health", "condition": "decreased_by_more_than", "value": 0 },
+      "guard": { "address": "timer", "condition": "above", "value": 0 },
+      "payment": null
+    }
+  ],
+
   "tournament_modes": [
     {
+      "id": "single_fight",
+      "name": "Single Fight (Best of 3)",
+      "description": "Standard MK match — 2 players, best of 3 rounds. First to 2 KOs wins.",
+      "players": 2,
+      "win_condition": "first_to_kos",
+      "target_kos": 2,
+      "ko_events": { "p1_dies": "p1_ko", "p2_dies": "p2_ko" },
+      "time_limit_minutes": 10
+    },
+    {
       "id": "first_to_two",
-      "name": "Best of 3 Rounds",
+      "name": "Best of 3 Rounds (Legacy)",
       "description": "First player to win 2 rounds wins. Track HP — player at 0 loses round.",
       "tracked_fields": ["p1_health", "p2_health"],
       "tracked_field": "health",

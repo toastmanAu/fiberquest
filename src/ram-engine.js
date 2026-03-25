@@ -40,21 +40,27 @@ class RetroArchClient {
   }
   bind() { return new Promise(r => this.socket.bind(0, r)); }
   close() { this.socket.close(); }
+  _normalizeAddr(addr) {
+    // "0x04B9" → "0x4b9", "4b9" → "0x4b9"
+    const stripped = addr.toLowerCase().replace(/^0x/, '').replace(/^0+/, '') || '0';
+    return '0x' + stripped;
+  }
   readMemory(addr, size = 1) {
     return new Promise((resolve, reject) => {
       const cmd = `READ_CORE_MEMORY ${addr} ${size}\n`;
-      this.pending.set(addr.toLowerCase(), resolve);
+      const key = this._normalizeAddr(addr);
+      this.pending.set(key, resolve);
       const buf = Buffer.from(cmd);
       this.socket.send(buf, 0, buf.length, this.port, this.host, err => { if (err) reject(err); });
       setTimeout(() => {
-        if (this.pending.has(addr.toLowerCase())) { this.pending.delete(addr.toLowerCase()); resolve(null); }
+        if (this.pending.has(key)) { this.pending.delete(key); resolve(null); }
       }, 200);
     });
   }
   _onMessage(msg) {
     const parts = msg.split(' ');
     if (parts[0] !== 'READ_CORE_MEMORY') return;
-    const addr = parts[1].toLowerCase();
+    const addr = this._normalizeAddr(parts[1]);
 
     // Extract all bytes from response: "READ_CORE_MEMORY 0x1828 ff 00" → [ff, 00]
     const bytes = parts.slice(2).map(b => parseInt(b, 16));
@@ -67,6 +73,16 @@ class RetroArchClient {
 
     const cb = this.pending.get(addr);
     if (cb) { this.pending.delete(addr); cb(value); }
+  }
+}
+
+function evaluateGuard(guard, value) {
+  switch (guard.condition) {
+    case 'above': return value > guard.value;
+    case 'below': return value < guard.value;
+    case 'equals': return value === guard.value;
+    case 'not_equals': return value !== guard.value;
+    default: return true;
   }
 }
 
@@ -134,13 +150,22 @@ class RamEngine extends EventEmitter {
       return { id, value };
     });
     const results = await Promise.all(reads);
+    let anyChange = false;
     for (const { id, value } of results) {
       if (value === null) continue;
       const previous = this.state[id] ?? value;
+      if (value !== previous) anyChange = true;
       this.state[id] = value;
-      for (const event of this.gameDef.events) {
+      for (const event of (this.gameDef.events || [])) {
         if (event.trigger.address !== id) continue;
         if (evaluateCondition(event.trigger, value, previous)) {
+          // Guard: optional condition on another address that must also be true
+          if (event.guard) {
+            const guardVal = this.state[event.guard.address];
+            if (guardVal === undefined || !evaluateGuard(event.guard, guardVal)) {
+              continue;  // Guard not satisfied — skip this event
+            }
+          }
           console.log(`[RamEngine] Event: ${event.id} — ${event.description}`);
           this.emit('game_event', { event, state: { ...this.state } });
           this.emit('payment_needed', {
@@ -152,6 +177,7 @@ class RamEngine extends EventEmitter {
         }
       }
     }
+    if (anyChange) this.emit('state_update', { ...this.state });
   }
 }
 

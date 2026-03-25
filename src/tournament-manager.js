@@ -208,6 +208,22 @@ class Tournament extends EventEmitter {
 
     const connectUrl = this._wallet.buildJoyIDConnectUrl(({ address, keyType }) => {
       console.log(`[Tournament] JoyID connect callback for ${player.name} — address ${address} keyType ${keyType}`)
+
+      // Reject duplicate accounts — each player must use a separate JoyID account
+      const duplicate = Object.entries(this.players).find(
+        ([id, p]) => id !== playerId && p.senderAddress === address
+      )
+      if (duplicate) {
+        const [, dp] = duplicate
+        console.error(`[Tournament] Duplicate JoyID account for ${player.name} — already registered to ${dp.name}`)
+        this.emit('error', {
+          message: `This JoyID account is already registered to ${dp.name}. Each player must use a separate account.`,
+          playerId,
+          name: player.name,
+        })
+        return
+      }
+
       player.senderAddress = address
       player.joyidKeyType  = keyType
       this.emit('player_connected', { playerId, name: player.name, address })
@@ -240,31 +256,37 @@ class Tournament extends EventEmitter {
     if (player.paid) throw new Error(`${player.name} already paid`);
     if (!this._wallet) throw new Error('Agent wallet not configured');
 
+    // Build the raw deposit tx — agent builds it, player just signs the challenge hash
     const { rawTx, dataMarker } = await this._wallet.buildPlayerDepositTx(
       playerAddress, this.id, player.slotIndex, this.entryFee
     );
 
-    // Register callback — JoyID redirects back with SignCkbTxResponseData: { tx, state }
+    // Extract cbId from callback URL so we can link raw tx to signed response
     const callbackUrl = this._wallet.registerJoyIDCallback(async (payload) => {
-      const signedTx = payload?.tx ?? payload;
-      console.log(`[Tournament] JoyID callback received for ${player.name} — submitting tx`);
+      // payload is SignMessageResponseData: { signature, message, pubkey, keyType, challenge }
+      console.log(`[Tournament] JoyID sign-message callback for ${player.name}`);
       try {
+        const signedTx = this._wallet.assembleSignedTx(cbId, payload);
+        require('fs').writeFileSync('/tmp/fq-signed-tx.json', JSON.stringify(signedTx, null, 2));
+        console.log(`[Tournament] Assembled signed tx for ${player.name} — submitting (dumped to /tmp/fq-signed-tx.json)`);
         const txHash = await this._wallet.sendRawTx(signedTx);
-        console.log(`[Tournament] ✅ JoyID deposit submitted for ${player.name}: ${txHash}`);
+        console.log(`[Tournament] ✅ Deposit submitted for ${player.name}: ${txHash}`);
       } catch (e) {
-        console.error(`[Tournament] ❌ JoyID deposit submit failed for ${player.name}:`, e.message);
-        this.emit('error', new Error(`JoyID deposit submit failed for ${player.name}: ${e.message}`));
+        console.error(`[Tournament] ❌ Deposit failed for ${player.name}:`, e.message);
+        this.emit('error', new Error(`Deposit failed for ${player.name}: ${e.message}`));
       }
-      // Chain watcher will detect the marker and call markPaid
     });
+    const cbId = callbackUrl.split('/joyid/').pop().split('?')[0];
 
-    const signUrl = this._wallet.buildJoyIDSignTxUrl(rawTx, playerAddress, callbackUrl);
+    // /sign-message with redirect — works like /auth (no window.opener needed).
+    // Player signs the tx challenge hash; we assemble the full signed tx on callback.
+    const signUrl = await this._wallet.buildJoyIDSignTxUrl(rawTx, playerAddress, callbackUrl, { entryFeeCkb: this.entryFee });
 
     player.signUrl       = signUrl;
     player.senderAddress = playerAddress;
     player.dataMarker    = dataMarker;
 
-    console.log(`[Tournament] Built L1 deposit tx for ${player.name} — marker ${dataMarker}`);
+    console.log(`[Tournament] Sign-message URL for ${player.name} — marker ${dataMarker}`);
     console.log(`[Tournament] JoyID callback: ${callbackUrl}`);
     this.emit('sign_url', { playerId, name: player.name, signUrl, dataMarker });
 
@@ -391,19 +413,29 @@ class Tournament extends EventEmitter {
     this.state     = 'ACTIVE';
     this._startedAt = Date.now();
 
-    // Start RAM engine
-    this.engine = new RamEngine({
-      raHost: this.raHost,
-      raPort: this.raPort,
-      fiberRpc: 'disabled',  // We handle payments here, not in the engine
-    });
-    this.engine.loadGame(this.gameId);
-
-    this.engine.on('game_event', ({ event, state }) => {
-      this._onGameEvent(event, state);
-    });
-
-    await this.engine.start();
+    // Use the shared RAM engine from main.js if available (already polling),
+    // otherwise start our own. The shared engine is preferred because it's
+    // already connected and logging to the session file.
+    if (this._sharedRamEngine) {
+      this.engine = this._sharedRamEngine;
+      this.engine.on('game_event', ({ event, state }) => {
+        this._onGameEvent(event, state);
+      });
+      this.engine.on('state_update', (state) => this._checkRoundGate(state));
+      console.log('[Tournament] Using shared RAM engine (already polling)');
+    } else {
+      this.engine = new RamEngine({
+        raHost: this.raHost,
+        raPort: this.raPort,
+        fiberRpc: 'disabled',
+      });
+      this.engine.loadGame(this.gameId);
+      this.engine.on('game_event', ({ event, state }) => {
+        this._onGameEvent(event, state);
+      });
+      this.engine.on('state_update', (state) => this._checkRoundGate(state));
+      await this.engine.start();
+    }
 
     // Time limit
     if (this.timeLimitMs > 0) {
@@ -425,14 +457,83 @@ class Tournament extends EventEmitter {
 
   // ── Score tracking ────────────────────────────────────────────────────────
 
+  _checkRoundGate(ramState) {
+    if (this.state !== 'ACTIVE') return;
+    if (!this._koLocked) return;
+    const mode = this.mode;
+    if (!mode || mode.win_condition !== 'first_to_kos') return;
+
+    const healthMax = this.gameDef.ram_addresses?.p1_health?.max || 161;
+    const p1h = ramState.p1_health ?? 0;
+    const p2h = ramState.p2_health ?? 0;
+    const timer = ramState.timer ?? 0;
+
+    // Phase 1: wait for both healths to reset to max AND timer is active
+    if (!this._roundReady && p1h >= healthMax && p2h >= healthMax && timer > 0) {
+      this._roundReady = true;
+      this._peakTimer = timer;
+      console.log(`[Tournament] Round reset detected — health maxed, timer=${timer}`);
+    }
+    // Phase 2: timer has ticked down from peak → new round confirmed
+    if (this._roundReady && this._peakTimer > 0 && timer > 0 && timer < this._peakTimer) {
+      this._koLocked = false;
+      this._roundReady = false;
+      this._peakTimer = 0;
+      console.log(`[Tournament] New round confirmed — KO detection unlocked (timer ${timer})`);
+    }
+  }
+
   _onGameEvent(event, ramState) {
     if (this.state !== 'ACTIVE') return;
 
     // Update scores from current RAM state
     this._updateScores(ramState);
 
-    // Check win condition
+    // ── KO-based win condition (fighting games) ──────────────────────────
     const mode = this.mode;
+    if (mode?.win_condition === 'first_to_kos' && mode?.ko_events) {
+      if (!this._koCount) this._koCount = {};
+      if (this._koLocked === undefined) this._koLocked = false;
+      if (this._roundReady === undefined) this._roundReady = true;
+      if (this._peakTimer === undefined) this._peakTimer = 0;
+
+      // Check round gate on every event too
+      this._checkRoundGate(ramState);
+
+      const playerIds = Object.keys(this.players);
+      const isKoEvent = event.id === mode.ko_events.p1_dies || event.id === mode.ko_events.p2_dies;
+
+      if (isKoEvent && this._koLocked) {
+        // Ignore — waiting for new round
+      } else if (event.id === mode.ko_events.p1_dies) {
+        // P1 died → P2 scores a KO
+        const p2id = playerIds[1] || 'p2';
+        this._koCount[p2id] = (this._koCount[p2id] || 0) + 1;
+        this.scores[p2id] = this._koCount[p2id];
+        this._koLocked = true;
+        this._roundReady = false;
+        console.log(`[Tournament] KO! ${p2id} now has ${this._koCount[p2id]} KOs`);
+      } else if (event.id === mode.ko_events.p2_dies) {
+        // P2 died → P1 scores a KO
+        const p1id = playerIds[0] || 'p1';
+        this._koCount[p1id] = (this._koCount[p1id] || 0) + 1;
+        this.scores[p1id] = this._koCount[p1id];
+        this._koLocked = true;
+        this._roundReady = false;
+        console.log(`[Tournament] KO! ${p1id} now has ${this._koCount[p1id]} KOs`);
+      }
+      // Check for winner
+      const target = mode.target_kos || 2;
+      for (const [pid, kos] of Object.entries(this._koCount)) {
+        if (kos >= target) {
+          console.log(`[Tournament] WINNER: ${pid} with ${kos} KOs`);
+          this._endTournament('ko_target_reached', pid);
+          return;
+        }
+      }
+    }
+
+    // ── Score-based win condition ─────────────────────────────────────────
     if (mode?.win_condition === 'first_to_value' && mode?.target_value) {
       for (const [pid, score] of Object.entries(this.scores)) {
         if (score >= mode.target_value) {
@@ -443,7 +544,7 @@ class Tournament extends EventEmitter {
     }
 
     // Emit score update
-    this.emit('scores', { scores: this._getScoreBoard(), scoreMax: this.mode?.score_max || 100 });
+    this.emit('scores', { scores: this._getScoreBoard(), scoreMax: mode?.target_kos || mode?.score_max || 100 });
   }
 
   _updateScores(ramState) {
@@ -506,6 +607,7 @@ class Tournament extends EventEmitter {
 
     // Determine winner
     const board   = this._getScoreBoard();
+    const isDraw  = !forcedWinner && board.length >= 2 && board[0].score === board[1].score;
     const winner  = forcedWinner
       ? { playerId: forcedWinner, ...this.players[forcedWinner] }
       : board[0];
@@ -516,11 +618,27 @@ class Tournament extends EventEmitter {
     }
 
     const totalPot = this.entryFee * Object.keys(this.players).length;
-    console.log(`[Tournament] Winner: ${winner.name || winner.playerId} — score ${winner.score}`);
+
+    // Add payout amounts to board for UI display
+    for (const entry of board) {
+      if (isDraw) {
+        entry.payout = Math.round(totalPot / board.length);
+      } else if (entry.playerId === (winner.playerId || forcedWinner)) {
+        entry.payout = totalPot;
+      } else {
+        entry.payout = 0;
+      }
+    }
+
+    if (isDraw) {
+      console.log(`[Tournament] DRAW — scores tied at ${board[0].score}. ${winner.name} adjudicated winner. Refunding all players.`);
+    } else {
+      console.log(`[Tournament] Winner: ${winner.name || winner.playerId} — score ${winner.score}`);
+    }
     console.log(`[Tournament] Pot: ${totalPot} CKB`);
     console.log(`[Tournament] Final scores:`, board.map(p => `${p.name}: ${p.score}`).join(', '));
 
-    this.emit('winner', { winner, board, reason, totalPot });
+    this.emit('winner', { winner, board, reason, totalPot, isDraw });
 
     // Settlement buffer — allows result submission and on-chain finality
     this.state = 'SETTLING';
@@ -528,20 +646,19 @@ class Tournament extends EventEmitter {
     console.log(`[Tournament] Settlement buffer: ${this.settlementBufferMs / 1000}s — pays out at ${new Date(settlesAt).toISOString()}`);
     this.emit('settling', { winner, board, reason, totalPot, settlesAt, settlementBufferMs: this.settlementBufferMs });
 
-    // Update chain state if we have a cell
-    if (this._chainStore && this.chainOutPoint) {
-      this._chainStore.beginSettlement(this.chainOutPoint, this._chainData(), winner.playerId)
-        .then(({ txHash, outPoint }) => { this.chainOutPoint = outPoint; })
-        .catch(e => console.warn('[Tournament] Chain settlement update failed:', e.message));
-    }
+    // Skip chain state update during settlement — it competes with payout for the
+    // same agent cells, causing RBF rejection. Payout is the priority.
+    // Chain state will be updated to COMPLETE after payout succeeds.
+    console.log('[Tournament] Skipping chain settlement update (payout priority)');
 
-    await new Promise(r => setTimeout(r, this.settlementBufferMs));
+    // Brief buffer before payout
+    await new Promise(r => setTimeout(r, 5000));
 
     // Payout
-    await this._payout(winner, totalPot, board);
+    await this._payout(winner, totalPot, board, isDraw);
   }
 
-  async _payout(winner, totalPot, board) {
+  async _payout(winner, totalPot, board, isDraw = false) {
     this.state = 'PAYING';
     const playerId = winner.playerId || Object.keys(this.players)[0];
     const player   = this.players[playerId];
@@ -550,7 +667,15 @@ class Tournament extends EventEmitter {
     const mode = this.mode;
     let payouts = [];
 
-    if (mode?.payout_structure === 'top2_split') {
+    if (isDraw) {
+      // Draw — refund all players equally
+      const playerCount = Object.keys(this.players).length;
+      payouts = Object.keys(this.players).map(pid => ({
+        playerId: pid,
+        share: 1.0 / playerCount,
+      }));
+      console.log(`[Tournament] Draw payout: refunding ${this.entryFee} CKB to each of ${playerCount} players`);
+    } else if (mode?.payout_structure === 'top2_split') {
       // 70/30 split
       payouts = [
         { playerId: board[0]?.playerId, share: 0.7 },
@@ -562,69 +687,79 @@ class Tournament extends EventEmitter {
     }
 
     const results = [];
+
+    // Collect L1 payouts to batch into a single tx (avoids RBF conflicts)
+    const l1Batch = [];
+    const fiberPayouts = [];
+    const manualPayouts = [];
+
     for (const { playerId: pid, share } of payouts) {
       const payout_ckb = totalPot * share;
       const p = this.players[pid];
       if (!p) continue;
-
       const reason = share === 1.0 ? 'winner_takes_all' : `top2_${Math.round(share * 100)}pct`;
-      console.log(`[Tournament] Paying ${p.name}: ${payout_ckb} CKB (${reason})`);
 
       if (p.payoutInvoice) {
-        // ── Autonomous payout — player pre-registered their invoice ──────────
-        try {
-          console.log(`[Tournament] Sending autonomous payout to ${p.name}...`);
-          const result = await this.fiber.sendPayment(p.payoutInvoice);
-          console.log(`[Tournament] ✅ Payout sent to ${p.name}:`, result?.payment_hash || result);
-          this.emit('payout_sent', {
-            playerId: pid,
-            name: p.name,
-            amount_ckb: payout_ckb,
-            reason,
-            result,
-          });
-          results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'sent', result });
-        } catch (e) {
-          console.error(`[Tournament] ❌ Autonomous payout failed for ${p.name}:`, e.message);
-          // Fall back to manual — emit payout_needed so host can retry
-          this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, error: e.message });
-          results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
-        }
+        fiberPayouts.push({ pid, p, payout_ckb, reason });
       } else if (p.senderAddress && this._wallet) {
-        // ── L1 payout — deposit was via JoyID, send back to sender address ───
-        try {
-          console.log(`[Tournament] Sending L1 payout to ${p.name} @ ${p.senderAddress}...`);
-          const txHash = await this._wallet.sendL1Payment(p.senderAddress, payout_ckb);
-          console.log(`[Tournament] ✅ L1 payout sent to ${p.name} — tx: ${txHash}`);
+        l1Batch.push({ pid, p, payout_ckb, reason });
+      } else {
+        manualPayouts.push({ pid, p, payout_ckb, reason });
+      }
+    }
+
+    // ── Batch L1 payouts in one transaction ──────────────────────────────────
+    if (l1Batch.length > 0 && this._wallet) {
+      const recipients = l1Batch.map(({ p, payout_ckb }) => ({
+        toAddress: p.senderAddress,
+        amountCkb: payout_ckb,
+      }));
+      const names = l1Batch.map(x => `${x.p.name}: ${x.payout_ckb} CKB`).join(', ');
+      console.log(`[Tournament] Batch L1 payout: ${names}`);
+      try {
+        const txHash = await this._wallet.sendL1BatchPayment(recipients);
+        console.log(`[Tournament] ✅ Batch L1 payout sent — tx: ${txHash}`);
+        for (const { pid, p, payout_ckb, reason } of l1Batch) {
           this.emit('payout_sent', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, txHash });
           results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'sent', txHash });
-        } catch (e) {
-          console.error(`[Tournament] ❌ L1 payout failed for ${p.name}:`, e.message);
+        }
+      } catch (e) {
+        console.error(`[Tournament] ❌ Batch L1 payout failed:`, e.message);
+        for (const { pid, p, payout_ckb, reason } of l1Batch) {
           this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, error: e.message });
           results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
         }
-      } else {
-        // ── Manual payout — no invoice and no sender address ─────────────────
-        console.log(`[Tournament] ⚠️  No payout path for ${p.name} — emitting payout_needed`);
-        this.emit('payout_needed', {
-          playerId: pid,
-          name: p.name,
-          amount_ckb: payout_ckb,
-          reason,
-          hint: `Call t.sendPayout(invoice) or t.setPayoutInvoice('${pid}', invoice) then retry`,
-        });
-        results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'pending' });
       }
+    }
+
+    // ── Fiber invoice payouts (sequential — each is a separate channel payment) ─
+    for (const { pid, p, payout_ckb, reason } of fiberPayouts) {
+      try {
+        console.log(`[Tournament] Sending Fiber payout to ${p.name}...`);
+        const result = await this.fiber.sendPayment(p.payoutInvoice);
+        console.log(`[Tournament] ✅ Payout sent to ${p.name}:`, result?.payment_hash || result);
+        this.emit('payout_sent', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, result });
+        results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'sent', result });
+      } catch (e) {
+        console.error(`[Tournament] ❌ Fiber payout failed for ${p.name}:`, e.message);
+        this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason, error: e.message });
+        results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'failed', error: e.message });
+      }
+    }
+
+    // ── Manual payouts (no path available) ───────────────────────────────────
+    for (const { pid, p, payout_ckb, reason } of manualPayouts) {
+      console.log(`[Tournament] ⚠️  No payout path for ${p.name} — emitting payout_needed`);
+      this.emit('payout_needed', { playerId: pid, name: p.name, amount_ckb: payout_ckb, reason });
+      results.push({ playerId: pid, name: p.name, amount_ckb: payout_ckb, status: 'pending' });
     }
 
     this.state = 'COMPLETE';
     console.log('[Tournament] Complete.');
 
-    // Update chain cell to COMPLETE
-    if (this._chainStore && this.chainOutPoint) {
-      this._chainStore.completeTournament(this.chainOutPoint, this._chainData())
-        .catch(e => console.warn('[Tournament] Chain complete update failed:', e.message));
-    }
+    // Chain state updates disabled — they race with payout for the same agent cells,
+    // causing the payout to be RBF-replaced. Payout delivery is the priority.
+    // TODO: use separate cell pools for chain state vs payouts
 
     this.emit('complete', {
       tournamentId: this.id,
@@ -632,6 +767,7 @@ class Tournament extends EventEmitter {
       board,
       payouts: results,
       totalPot,
+      isDraw,
     });
   }
 
@@ -753,22 +889,32 @@ class TournamentManager extends EventEmitter {
     t._wallet = this.wallet;
     this.tournaments.set(t.id, t);
 
+    // Create tournament data file
+    const { TournamentLogger } = require('./session-logger');
+    t._logger = new TournamentLogger(t.id, {
+      gameId:   t.gameId,
+      mode:     t.modeId,
+      entryFee: t.entryFee,
+      currency: t.currency,
+    });
+
     // Bubble events up
-    t.on('invoice',           e => this.emit('invoice',           { tournamentId: t.id, ...e }));
-    t.on('player_registered', e => this.emit('player_registered', { tournamentId: t.id, ...e }));
-    t.on('connect_qr',        e => this.emit('connect_qr',        { tournamentId: t.id, ...e }));
-    t.on('player_connected',  e => this.emit('player_connected',  { tournamentId: t.id, ...e }));
-    t.on('sign_url',          e => this.emit('sign_url',          { tournamentId: t.id, ...e }));
-    t.on('deposit_timeout',   e => this.emit('deposit_timeout',   { tournamentId: t.id, ...e }));
-    t.on('player_paid',       e => this.emit('player_paid',       { tournamentId: t.id, ...e }));
-    t.on('started',           e => this.emit('started',           e));
-    t.on('scores',            e => this.emit('scores',            { tournamentId: t.id, scores: e }));
-    t.on('winner',            e => this.emit('winner',            { tournamentId: t.id, ...e }));
-    t.on('settling',          e => this.emit('settling',          { tournamentId: t.id, ...e }));
-    t.on('payout_needed',     e => this.emit('payout_needed',     { tournamentId: t.id, ...e }));
-    t.on('payout_sent',       e => this.emit('payout_sent',       { tournamentId: t.id, ...e }));
-    t.on('complete',          e => this.emit('complete',          e));
-    t.on('error',             e => this.emit('error',             e));
+    const log = (evt, data) => { if (t._logger) t._logger.addEvent({ event: evt, ...data }); };
+    t.on('invoice',           e => { log('invoice', e);           this.emit('invoice',           { tournamentId: t.id, ...e }); });
+    t.on('player_registered', e => { log('player_registered', e); this.emit('player_registered', { tournamentId: t.id, ...e }); });
+    t.on('connect_qr',        e => { this.emit('connect_qr',        { tournamentId: t.id, ...e }); });
+    t.on('player_connected',  e => { log('player_connected', e);  this.emit('player_connected',  { tournamentId: t.id, ...e }); });
+    t.on('sign_url',          e => { this.emit('sign_url',          { tournamentId: t.id, ...e }); });
+    t.on('deposit_timeout',   e => { log('deposit_timeout', e);   this.emit('deposit_timeout',   { tournamentId: t.id, ...e }); });
+    t.on('player_paid',       e => { log('player_paid', e);       this.emit('player_paid',       { tournamentId: t.id, ...e }); });
+    t.on('started',           e => { log('started', e); t._logger?.update({ state: 'ACTIVE' }); this.emit('started', e); });
+    t.on('scores',            e => { t._logger?.updateScores(e);  this.emit('scores',            { tournamentId: t.id, scores: e }); });
+    t.on('winner',            e => { log('winner', e);            this.emit('winner',            { tournamentId: t.id, ...e }); });
+    t.on('settling',          e => { log('settling', e); t._logger?.update({ state: 'SETTLING' }); this.emit('settling', { tournamentId: t.id, ...e }); });
+    t.on('payout_needed',     e => { log('payout_needed', e);     this.emit('payout_needed',     { tournamentId: t.id, ...e }); });
+    t.on('payout_sent',       e => { log('payout_sent', e);       this.emit('payout_sent',       { tournamentId: t.id, ...e }); });
+    t.on('complete',          e => { t._logger?.complete(e);      this.emit('complete',          e); });
+    t.on('error',             e => { log('error', e);             this.emit('error',             e); });
 
     // Write escrow cell to CKB (async — non-blocking, logs result)
     if (this.chainStore) {
@@ -863,6 +1009,12 @@ class TournamentManager extends EventEmitter {
   }
 
   get(id) { return this.tournaments.get(id); }
+  getActive() {
+    for (const t of this.tournaments.values()) {
+      if (t.state === 'ACTIVE' || t.state === 'WAITING_PLAYERS') return t;
+    }
+    return null;
+  }
   list()  { return [...this.tournaments.values()].map(t => t.status()); }
 
   /** Start polling all waiting tournaments for incoming payments */

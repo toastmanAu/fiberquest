@@ -242,6 +242,7 @@
     transition: opacity 0.25s;
     overflow-y: auto;
     padding: var(--sp-lg) var(--sp-md);
+    padding-bottom: clamp(100px, 14vh, 160px);  /* Space for fixed retro console */
   }
   .view.active { opacity: 1; pointer-events: auto; }
 
@@ -979,7 +980,7 @@
   </div>
 
   <!-- ── VIEW 5: SETTINGS ─────────────────────────────────── -->
-  <div class="view" id="view-settings">
+  <div class="view" id="view-settings" style="justify-content:flex-start">
     <div class="settings-wrap">
       <div class="view-title cyan">SETTINGS</div>
 
@@ -1444,6 +1445,7 @@ function showWaitingRoom() {
       <div class="slot-status" id="status-${i}">Waiting...</div>
       <div class="invoice-box" id="invoice-${i}" style="display:none">
         <div id="invoice-label-${i}" style="font-size:var(--fs-xs);color:var(--yellow);margin-bottom:var(--sp-xs)">SCAN WITH JOYID</div>
+        <div style="font-size:10px;color:#888;margin-bottom:4px">⚠ Phone must be on same WiFi</div>
         <img class="invoice-qr" id="invoiceQr-${i}" src="" alt="QR" style="display:none">
         <div class="invoice-text" id="invoiceText-${i}"></div>
         <button class="invoice-copy" onclick="copyInvoice(${i})">COPY URL</button>
@@ -1554,7 +1556,14 @@ async function endTournament() {
 
 // ── View 4: Results ───────────────────────────────────────
 function showResults(event) {
-  document.getElementById('winnerName').textContent = (event.winner?.name || 'Unknown') + '!';
+  if (event.isDraw) {
+    document.querySelector('.results-header').textContent = 'DRAW \u2014 REFUND';
+    const perPlayer = Math.round(event.totalPot / (event.board?.length || 2));
+    document.getElementById('winnerName').textContent = 'All players refunded ' + perPlayer + ' CKB';
+  } else {
+    document.querySelector('.results-header').textContent = '\uD83C\uDFC6 WINNER!';
+    document.getElementById('winnerName').textContent = (event.winner?.name || 'Unknown') + '!';
+  }
   const rows = (event.board || []).map((e, i) => `
     <div class="score-row">
       <div class="score-rank">#${i+1}</div>
@@ -1833,7 +1842,8 @@ function handleTournamentEvent(ev) {
       const st = document.getElementById(`status-${slotIdx}`)
       if (st) { st.textContent = 'Step 2: Scan to sign & pay'; st.style.color = 'var(--text)'; }
       retroLog(`[P${slotIdx+1}] Deposit tx built — showing sign QR`, 'ok')
-      showSlotQr(slotIdx, ev.signUrl, 'STEP 2 — SIGN & PAY')
+      const fee = currentTournament?.entryFee || '?';
+      showSlotQr(slotIdx, ev.signUrl, `STEP 2 \u2014 SIGN ${fee} CKB ENTRY IN JOYID`)
       break
     }
     case 'deposit_timeout': {
@@ -1886,7 +1896,11 @@ function handleTournamentEvent(ev) {
         });
       }
       break;
-    case 'settling': showSettling(ev); break;
+    case 'winner':
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+      showResults(ev);
+      break;
+    case 'settling': break;  // Results already shown on winner
     case 'cancelled': {
       if (timerInterval)    { clearInterval(timerInterval);   timerInterval   = null; }
       if (settlingInterval) { clearInterval(settlingInterval); settlingInterval = null; }
