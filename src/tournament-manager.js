@@ -1022,7 +1022,7 @@ class Tournament extends EventEmitter {
           }
           this._resolveDistributedWinner();
         }
-      }, SETTLEMENT_TIMEOUT_MS);
+      }, resolveDelay);
       return;
     }
 
