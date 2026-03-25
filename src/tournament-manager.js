@@ -921,8 +921,11 @@ class Tournament extends EventEmitter {
     if (this.state !== 'ACTIVE' && reason !== 'distributed_consensus') return;
     if (this.state !== 'ACTIVE' && this.state !== 'SETTLING') return;
 
-    // ── Distributed mode: submit score and wait for others ──────────────
-    // Ensure organiser has a myPlayerId (first local player)
+    // ── Distributed mode: ALL agents follow the same path ──────────────
+    // 1. Submit own score to chain
+    // 2. Poll chain for all scores
+    // 3. Resolve winner when all found (or timeout)
+    // This is identical for organiser and participant.
     if (this.tournamentMode === 'distributed' && !this.myPlayerId) {
       this.myPlayerId = Object.keys(this.players)[0];
     }
@@ -930,21 +933,28 @@ class Tournament extends EventEmitter {
       this.state = 'SETTLING';
       clearTimeout(this._timer);
       if (this.engine) this.engine.stop();
-      console.log(`[Tournament] Distributed mode — submitting local score, waiting for others`);
-      await this._submitMyScore();
-      this.startDistributedPolling();
-      this.emit('settling', { reason, tournamentId: this.id, message: 'Waiting for all agents to submit scores' });
 
-      // Timeout: if not all scores after 2× settlement buffer, resolve with local scores
+      const myScore = this.scores[this.myPlayerId] || 0;
+      console.log(`[Tournament] Settling — my score: ${myScore} (${this.myPlayerId})`);
+
+      // Step 1: Submit own score
+      await this._submitMyScore();
+
+      // Step 2: Emit settling to UI
+      this.emit('settling', { reason, tournamentId: this.id, message: `Score submitted: ${myScore}. Waiting for other agents...` });
+
+      // Step 3: Poll chain for all scores (same code for organiser + participant)
+      this.startDistributedPolling();
+
+      // Step 4: Timeout — resolve with whatever we have
       setTimeout(() => {
         if (this.state === 'SETTLING') {
-          console.log('[Tournament] Settlement timeout — using local scores for unsubmitted players');
+          console.log('[Tournament] Settlement timeout — resolving with available data');
           for (const pid of Object.keys(this.players)) {
             if (!this.scoreSubmissions[pid]) {
-              // Use locally tracked score instead of forfeiting
               const localScore = this.scores[pid] || 0;
               this.scoreSubmissions[pid] = { score: localScore, koCount: 0, submittedAt: Date.now() };
-              console.log(`[Tournament] ${pid} score from local: ${localScore}`);
+              console.log(`[Tournament] ${pid} using local score: ${localScore}`);
             }
           }
           this._resolveDistributedWinner();
