@@ -558,11 +558,24 @@ class Tournament extends EventEmitter {
       timeLimitMs: this.timeLimitMs,
     });
 
-    // Update chain cell to ACTIVE so remote agents detect the start
+    // Update chain cell to ACTIVE with a future startsAt timestamp
+    // All agents sync their timers to this timestamp — no offset between machines
     if (this._chainStore && this.tournamentMode === 'distributed') {
+      const SYNC_DELAY_MS = 30000; // 30s grace for chain confirmation + polling
+      const startsAt = Date.now() + SYNC_DELAY_MS;
+      this._startsAt = startsAt;
+
+      // Reset our own timer to fire from the synced start time
+      clearTimeout(this._timer);
+      this._startedAt = startsAt;
+      this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs + SYNC_DELAY_MS);
+      console.log(`[Tournament] Synced start: ${new Date(startsAt).toISOString()} (in ${SYNC_DELAY_MS/1000}s)`);
+
       this._chainStore.scanTournaments(this.id).then(cells => {
         if (cells[0]) {
-          this._chainStore.activateTournament(cells[0].outPoint, { ...cells[0], ...this._chainData() })
+          this._chainStore.activateTournament(cells[0].outPoint, {
+            ...cells[0], ...this._chainData(), startsAt
+          })
             .then(r => console.log(`[Tournament] Chain cell updated to ACTIVE: ${r.txHash}`))
             .catch(e => console.warn(`[Tournament] Chain ACTIVE update failed: ${e.message}`));
         }
@@ -891,15 +904,22 @@ class Tournament extends EventEmitter {
         // Detect state changes from organizer (only fire once)
         if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') && !this._distributedStarted) {
           this._distributedStarted = true;
-          console.log('[Tournament] Chain: tournament is ACTIVE — starting local engine');
-          this.emit('started', {
-            tournamentId: this.id,
-            game: this.gameDef?.name,
-            mode: this.mode?.name,
-            players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
-            timeLimitMs: this.timeLimitMs,
-          });
-          this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
+          const startsAt = cell.startsAt || Date.now();
+          const waitMs = Math.max(0, startsAt - Date.now());
+          console.log(`[Tournament] Chain: ACTIVE — synced start in ${Math.round(waitMs/1000)}s`);
+
+          // Wait until the synced start time, then start
+          setTimeout(() => {
+            this._startedAt = startsAt;
+            this.emit('started', {
+              tournamentId: this.id,
+              game: this.gameDef?.name,
+              mode: this.mode?.name,
+              players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
+              timeLimitMs: this.timeLimitMs,
+            });
+            this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
+          }, waitMs);
         }
         // Detect tournament settling — submit our score
         if (cell.state === 'SETTLING' && this.state === 'ACTIVE') {
