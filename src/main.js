@@ -87,7 +87,11 @@ function getConfigPath() {
 function loadConfig() {
   try {
     const raw = fs.readFileSync(getConfigPath(), 'utf8');
-    return { ...CONFIG_DEFAULTS, ...JSON.parse(raw) };
+    const saved = JSON.parse(raw);
+    // Never let stale saved values override code defaults for these keys —
+    // they depend on install paths or auto-detection that may have changed.
+    delete saved.retroarchBin;
+    return { ...CONFIG_DEFAULTS, ...saved };
   } catch (_) {
     return { ...CONFIG_DEFAULTS };
   }
@@ -811,8 +815,8 @@ app.whenReady().then(async () => {
     console.warn('[Main] Node auto-detect failed:', e.message)
   }
 
-  // Auto-detect biscuit auth token if not configured
-  if (!CONFIG.fiberAuthToken) {
+  // Auto-detect biscuit auth token — always re-scan (token files may change)
+  {
     const tokenPaths = [
       path.join(process.env.HOME || '', '.fiber-testnet', '.secrets', 'biscuit-token.txt'),
       path.join(process.env.HOME || '', '.fiber-mainnet', '.secrets', 'biscuit-token.txt'),
@@ -823,6 +827,7 @@ app.whenReady().then(async () => {
         const token = fs.readFileSync(tp, 'utf8').trim();
         if (token) {
           CONFIG.fiberAuthToken = token;
+          saveConfig({ fiberAuthToken: token });
           console.log(`[Main] Auto-detected biscuit token: ${tp}`);
           break;
         }
