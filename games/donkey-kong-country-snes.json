@@ -1,42 +1,84 @@
 {
   "id": "donkey-kong-country-snes",
-  "title": "Donkey Kong Country",
-  "platform": "snes",
+  "name": "Donkey Kong Country",
+  "system": "snes",
+  "rom_name": "Donkey Kong Country.zip",
   "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/snes9x_libretro.so",
-  "rom": "~/roms/snes/Donkey Kong Country (USA) (Rev 2).zip",
-  "tournament_format": "race",
-  "description": "Level race — first to complete a set of levels wins. Track lives as tiebreaker.",
+  "description": "Classic platformer — collect bananas, KONG letters, and survive. Lives + bananas = score.",
+
   "ram_addresses": {
     "p1_lives": {
-      "address": "0xA863",
+      "address": "0x7E0575",
       "size": 1,
       "type": "uint8",
-      "encoding": "decimal",
-      "notes": "AR: B6A863:AD (infinite lives cheat = write AD here). Actual live lives value at this address."
+      "notes": "Lives counter. Starts at 5, +1 per balloon/KONG. Verified live 2026-03-25."
     },
-    "kong_status": {
-      "address": "0x8FA4",
+    "p1_bananas": {
+      "address": "0x7E0529",
       "size": 1,
       "type": "uint8",
-      "encoding": "decimal",
-      "notes": "AR: BF8FA4:03 = both Kongs. Bit flags: bit0=DK alive, bit1=Diddy alive."
+      "notes": "Banana counter (0-99, resets at 100 = extra life). Verified live 2026-03-25 — increments +1 per banana."
     },
-    "level_complete": {
-      "address": "0x8E84",
+    "levels_complete": {
+      "address": "0x7E050C",
       "size": 1,
       "type": "uint8",
-      "encoding": "decimal",
-      "notes": "AR: BF8E84:FF = Return of Kong flag. Changes on level exit."
+      "notes": "Number of levels completed this session. Verified live 2026-03-25."
     }
   },
-  "win_condition": "race_completion",
-  "tournament_rules": "Race format — first player to complete World 1 (5 levels + boss) wins. Simultaneous start on separate machines or split-screen if supported. Lives count as tiebreaker if tied.",
-  "confidence": "medium",
-  "notes": "AR codes use bank addressing (BF prefix = bank $BF). Actual WRAM addresses need live verification — subtract $7E0000 offset. Verify 0xA863 is correct WRAM lives location.",
-  "sources": [
-    "libretro-database/cht SNES AR: B6A863 lives, BF8FA4 kong status"
+
+  "events": [
+    {
+      "id": "life_gained",
+      "description": "Extra life collected (balloon or 100 bananas)",
+      "trigger": { "address": "p1_lives", "condition": "changed" },
+      "payment": null
+    },
+    {
+      "id": "banana_collected",
+      "description": "Banana count changed",
+      "trigger": { "address": "p1_bananas", "condition": "changed" },
+      "payment": null
+    },
+    {
+      "id": "level_complete",
+      "description": "Level completed",
+      "trigger": { "address": "levels_complete", "condition": "changed" },
+      "payment": null
+    }
   ],
-  "rom_name": "Donkey Kong Country.zip",
-  "name": "Donkey Kong Country",
-  "system": "snes"
+
+  "tournament_modes": [
+    {
+      "id": "timed_score",
+      "name": "Timed High Score (10 min)",
+      "description": "Play for 10 minutes. Score = (levels_complete × 100) + (lives × 10) + bananas. Highest score wins.",
+      "players": 2,
+      "win_condition": "highest_score_at_time",
+      "time_limit_minutes": 10,
+      "score_formula": "levels_complete * 100 + p1_lives * 10 + p1_bananas"
+    },
+    {
+      "id": "most_levels",
+      "name": "Most Levels (10 min)",
+      "description": "Complete as many levels as possible in 10 minutes. Lives as tiebreaker.",
+      "players": 2,
+      "win_condition": "highest_score_at_time",
+      "time_limit_minutes": 10,
+      "score_formula": "levels_complete * 1000 + p1_lives"
+    }
+  ],
+
+  "confidence": "high",
+  "notes": [
+    "SNES WRAM addresses verified live on Pi 5 (aarch64) with patched snes9x core",
+    "Requires snes9x with SET_MEMORY_MAPS patch for READ_CORE_MEMORY to work",
+    "Addresses use 0x7E prefix (SNES WRAM bank)",
+    "Lives: 0x7E0575 (starts at 5, confirmed balloon +1, KONG letters +1)",
+    "Bananas: 0x7E0563 (verified changing during gameplay)",
+    "Levels complete: 0x7E050C (0→1 after completing level 1)"
+  ],
+  "sources": [
+    "Live verification via FiberQuest RAM scanner 2026-03-25"
+  ]
 }
