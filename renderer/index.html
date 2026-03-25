@@ -1452,10 +1452,11 @@ function showWaitingRoom() {
   document.getElementById('waitStatus').textContent = isDistributed
     ? `Distributed — ${n} players needed. Share tournament ID or wait for chain join.`
     : `Waiting for ${n} players...`;
-  document.getElementById('playerSlots').innerHTML  = Array(n).fill(null).map((_, i) => `
+  const localSlots = isDistributed ? 1 : n;  // Distributed: only show local player slot
+  document.getElementById('playerSlots').innerHTML  = Array(localSlots).fill(null).map((_, i) => `
     <div class="player-slot" id="slot-${i}">
       <div id="step-name-${i}">
-        <input type="text" class="slot-input" id="name-${i}" placeholder="Player ${i+1} name">
+        <input type="text" class="slot-input" id="name-${i}" placeholder="${isDistributed ? 'Your name (local player)' : 'Player ' + (i+1) + ' name'}">
         <button class="slot-button" onclick="addPlayerName(${i})">ADD PLAYER</button>
       </div>
       <div class="slot-status" id="status-${i}">Waiting...</div>
@@ -1466,7 +1467,12 @@ function showWaitingRoom() {
         <div class="invoice-text" id="invoiceText-${i}"></div>
         <button class="invoice-copy" onclick="copyInvoice(${i})">COPY URL</button>
       </div>
-    </div>`).join('');
+    </div>`).join('')
+    + (isDistributed ? `<div class="player-slot" style="border-color:var(--muted);opacity:0.6">
+        <div style="color:var(--muted);padding:var(--sp-sm);text-align:center">
+          ⏳ Waiting for ${n - 1} remote player${n > 2 ? 's' : ''} to join via chain...
+        </div>
+      </div>` : '');
   showView('view-waiting');
 }
 
