@@ -1110,14 +1110,15 @@ class Tournament extends EventEmitter {
   /** Current status snapshot */
   status() {
     return {
-      id:         this.id,
-      state:      this.state,
-      gameId:     this.gameId,
-      modeId:     this.modeId,
-      game:       this.gameDef?.name,
-      mode:       this.mode?.name,
-      entryFee:   this.entryFee,
-      maxPlayers: this.maxPlayers,
+      id:             this.id,
+      state:          this.state,
+      gameId:         this.gameId,
+      modeId:         this.modeId,
+      game:           this.gameDef?.name,
+      mode:           this.mode?.name,
+      entryFee:       this.entryFee,
+      maxPlayers:     this.maxPlayers,
+      tournamentMode: this.tournamentMode,
       players:    Object.entries(this.players).map(([id, p]) => ({
                     id, name: p.name, paid: p.paid, score: p.score
                   })),
