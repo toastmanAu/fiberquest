@@ -1943,7 +1943,13 @@ function handleTournamentEvent(ev) {
       if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
       showResults(ev);
       break;
-    case 'settling': break;  // Results already shown on winner
+    case 'settling':
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+      document.getElementById('timerValue').textContent = '0:00';
+      document.getElementById('timerValue').style.color = 'var(--yellow)';
+      document.querySelector('.timer-label').textContent = 'SETTLING';
+      document.getElementById('modeLive').textContent = 'Submitting scores to chain...';
+      break;
     case 'cancelled': {
       if (timerInterval)    { clearInterval(timerInterval);   timerInterval   = null; }
       if (settlingInterval) { clearInterval(settlingInterval); settlingInterval = null; }
