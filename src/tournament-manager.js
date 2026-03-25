@@ -551,8 +551,8 @@ class Tournament extends EventEmitter {
       await this.engine.start();
     }
 
-    // Time limit
-    if (this.timeLimitMs > 0) {
+    // Time limit — don't override if already set by distributed chain poll (synced to endsAt)
+    if (this.timeLimitMs > 0 && !this._timer) {
       this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs);
     }
 
