@@ -39,7 +39,7 @@ class RetroArchClient {
     this.socket.on('message', (msg) => this._onMessage(msg.toString().trim()));
   }
   bind() { return new Promise(r => this.socket.bind(0, r)); }
-  close() { this.socket.close(); }
+  close() { try { this.socket.close(); } catch (_) {} }
   _normalizeAddr(addr) {
     // "0x04B9" → "0x4b9", "4b9" → "0x4b9"
     const stripped = addr.toLowerCase().replace(/^0x/, '').replace(/^0+/, '') || '0';
@@ -125,6 +125,7 @@ class RamEngine extends EventEmitter {
   }
 
   stop() {
+    if (!this.running) return;
     this.running = false;
     clearInterval(this._interval);
     this.ra.close();

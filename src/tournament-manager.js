@@ -76,6 +76,21 @@ function decodeScore(state, gameDef, mode) {
     return state.p1_lives ?? state.lives ?? 0;
   }
 
+  // Formula-based score (e.g. "levels_complete * 100 + p1_lives * 10 + p1_bananas")
+  const formula = mode?.score_formula;
+  if (formula) {
+    try {
+      // Replace variable names with values from state, then evaluate
+      const expr = formula.replace(/[a-z_][a-z0-9_]*/gi, (name) => {
+        return String(state[name] ?? 0);
+      });
+      // Safe eval — only arithmetic operators and numbers
+      if (/^[\d\s+\-*/().]+$/.test(expr)) {
+        return Math.round(Function('"use strict"; return (' + expr + ')')());
+      }
+    } catch (_) {}
+  }
+
   return 0;
 }
 
@@ -537,6 +552,17 @@ class Tournament extends EventEmitter {
       timeLimitMs: this.timeLimitMs,
     });
 
+    // Update chain cell to ACTIVE so remote agents detect the start
+    if (this._chainStore && this.tournamentMode === 'distributed') {
+      this._chainStore.scanTournaments(this.id).then(cells => {
+        if (cells[0]) {
+          this._chainStore.activateTournament(cells[0].outPoint, { ...cells[0], ...this._chainData() })
+            .then(r => console.log(`[Tournament] Chain cell updated to ACTIVE: ${r.txHash}`))
+            .catch(e => console.warn(`[Tournament] Chain ACTIVE update failed: ${e.message}`));
+        }
+      }).catch(() => {});
+    }
+
     return this;
   }
 
@@ -837,9 +863,21 @@ class Tournament extends EventEmitter {
           }
         }
         // Detect state changes from organizer
-        if (cell.state === 'ACTIVE' && this.state === 'WAITING_PLAYERS') {
+        if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED')) {
           console.log('[Tournament] Chain: tournament is ACTIVE — starting local engine');
+          this.emit('started', {
+            tournamentId: this.id,
+            game: this.gameDef?.name,
+            mode: this.mode?.name,
+            players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
+            timeLimitMs: this.timeLimitMs,
+          });
           this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
+        }
+        // Detect tournament end
+        if ((cell.state === 'SETTLING' || cell.state === 'COMPLETE') && this.state === 'ACTIVE') {
+          console.log(`[Tournament] Chain: tournament is ${cell.state} — submitting score`);
+          this._endTournament('time_limit');
         }
       } catch (e) {
         // Non-fatal — will retry next interval
@@ -1278,6 +1316,10 @@ class TournamentManager extends EventEmitter {
       );
     } else if (this.chainStore) {
       t._chainStore = this.chainStore;
+    } else {
+      // Ensure a read-only chain store is always available for distributed scanning/submission
+      const { ChainStore } = require('./chain-store');
+      t._chainStore = new ChainStore({ rpcUrl: this.ckbRpcUrl || 'https://testnet.ckbapp.dev/', wallet: this.wallet });
     }
 
     // Early snapshot as fallback — _writeEscrowCell will overwrite with a post-escrow snapshot
