@@ -945,7 +945,7 @@
       <div class="live-subheader" id="modeLive"></div>
     </div>
     <div class="timer">
-      <div class="timer-label">ELAPSED</div>
+      <div class="timer-label">REMAINING</div>
       <div id="timerValue">0:00</div>
     </div>
     <div class="vs-container">
@@ -1560,12 +1560,17 @@ function showLive(ev) {
   if (players[0]) document.getElementById('p1NameLive').textContent = players[0].name;
   if (players[1]) document.getElementById('p2NameLive').textContent = players[1].name;
 
-  let elapsed = 0;
+  const timeLimitSec = Math.round((ev?.timeLimitMs || currentTournament?.timeLimitMs || 600000) / 1000);
+  let remaining = timeLimitSec;
+  document.getElementById('timerValue').textContent =
+    `${Math.floor(remaining/60)}:${(remaining%60).toString().padStart(2,'0')}`;
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
-    elapsed++;
-    document.getElementById('timerValue').textContent =
-      `${Math.floor(elapsed/60)}:${(elapsed%60).toString().padStart(2,'0')}`;
+    remaining--;
+    if (remaining < 0) remaining = 0;
+    const el = document.getElementById('timerValue');
+    el.textContent = `${Math.floor(remaining/60)}:${(remaining%60).toString().padStart(2,'0')}`;
+    el.style.color = remaining <= 30 ? 'var(--red)' : remaining <= 60 ? 'var(--yellow)' : '';
   }, 1000);
   showView('view-live');
 }
