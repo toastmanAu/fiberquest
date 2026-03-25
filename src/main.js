@@ -635,8 +635,13 @@ function setupTournamentIPC() {
 
   // ── Distributed tournament: join an existing on-chain tournament ─────────
   ipcMain.handle('tournament:joinDistributed', async (_, tournamentId, myPlayerId, myName) => {
-    if (!tournamentManager.chainStore) throw new Error('Chain store not configured');
-    const cells = await tournamentManager.chainStore.scanTournaments(tournamentId);
+    // Use existing chain store or create a read-only one for scanning
+    let chainStore = tournamentManager.chainStore;
+    if (!chainStore) {
+      const { ChainStore } = require('./chain-store');
+      chainStore = new ChainStore({ rpcUrl: CONFIG.ckbRpcUrl });
+    }
+    const cells = await chainStore.scanTournaments(tournamentId);
     if (!cells.length) throw new Error('Tournament not found on chain: ' + tournamentId);
     const cell = cells[0];
 
