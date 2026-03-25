@@ -645,6 +645,18 @@ function setupTournamentIPC() {
     if (!cells.length) throw new Error('Tournament not found on chain: ' + tournamentId);
     const cell = cells[0];
 
+    // Determine slot index — count existing deposits on organizer's cells to find next slot
+    const { depositDataMarker } = require('./agent-wallet');
+    let mySlotIndex = 0;
+    if (agentWallet) {
+      // Scan organizer's cells for existing deposit markers to find next open slot
+      // We can't scan remote cells, so count based on chain cell player count
+      mySlotIndex = (cell.players || []).length;  // next slot after existing players
+    }
+    // Fallback: use maxPlayers - 1 (last slot) if we can't determine
+    if (mySlotIndex === 0 && cell.maxPlayers > 1) mySlotIndex = 1;
+    console.log(`[Main] Joining as slot ${mySlotIndex} (${(cell.players || []).length} existing players on chain)`);
+
     // Create a local tournament mirror from on-chain data (skip escrow — we're joining, not creating)
     const t = await tournamentManager.create({
       id:               cell.id,
@@ -656,10 +668,10 @@ function setupTournamentIPC() {
       currency:         cell.currency,
       tournamentMode:   'distributed',
       myPlayerId:       myPlayerId,
+      mySlotIndex:      mySlotIndex,
       skipEscrow:       true,
-      organizerAddress: cell.organizerAddress,  // deposits go here
+      organizerAddress: cell.organizerAddress,
     });
-    // Store organizer address so deposit tx sends to the right place
     t._organizerAddress = cell.organizerAddress;
     // Start polling chain for state changes
     t.startDistributedPolling();

@@ -115,6 +115,7 @@ class Tournament extends EventEmitter {
     // ── Distributed mode ──────────────────────────────────────────────────
     this.tournamentMode   = opts.tournamentMode || 'local';  // 'local' | 'distributed'
     this.myPlayerId       = opts.myPlayerId || null;          // which player THIS agent represents
+    this.mySlotIndex      = opts.mySlotIndex ?? null;         // assigned slot for distributed joins
     this.scoreSubmissions = {};                                // { playerId: { score, koCount, eventLogHash, submittedAt } }
     this._timer    = null;
     this._startedAt = null;
@@ -149,7 +150,10 @@ class Tournament extends EventEmitter {
     const fiberAddr     = opts.fiberAddr     || null; // player's Fiber node address (multiaddr)
 
     // Slot index is position in registration order (stable, 0-based)
-    const slotIndex = Object.keys(this.players).length;
+    // For distributed joins, use the assigned slot for this agent's player
+    const slotIndex = (this.mySlotIndex !== null && playerId === this.myPlayerId)
+      ? this.mySlotIndex
+      : (opts.slotIndex ?? Object.keys(this.players).length);
 
     // ── Fiber invoice path (used when wallet flow hasn't built the tx yet) ─────
     // The full L1 path is in buildPlayerPayTx() — called after player provides address.
