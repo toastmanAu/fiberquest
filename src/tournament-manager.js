@@ -210,6 +210,12 @@ class Tournament extends EventEmitter {
     this.scores[playerId] = 0;
     this.state = 'WAITING_PLAYERS';
 
+    // Distributed: set myPlayerId to first registered player if not already set (organiser)
+    if (this.tournamentMode === 'distributed' && !this.myPlayerId) {
+      this.myPlayerId = playerId;
+      console.log(`[Tournament] Set myPlayerId to ${playerId} (organiser)`);
+    }
+
     // Distributed mode: auto-populate local Fiber peer info for this player
     if (this.tournamentMode === 'distributed' && playerId === this.myPlayerId && this.fiber) {
       try {
