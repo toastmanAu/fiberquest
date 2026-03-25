@@ -333,9 +333,16 @@ function setupIPC() {
 
   // Chain — tournament discovery
   ipcMain.handle('chain:scan', async () => {
-    if (!tournamentManager?.chainStore) return { ok: false, reason: 'Agent key not configured' };
     try {
-      const tournaments = await tournamentManager.scanChain();
+      // Chain scan only needs CKB RPC, not a wallet — create a read-only chain store if needed
+      if (tournamentManager?.chainStore) {
+        const tournaments = await tournamentManager.scanChain();
+        return { ok: true, tournaments };
+      }
+      // Fallback: create a temporary read-only chain store
+      const { ChainStore } = require('./chain-store');
+      const cs = new ChainStore({ rpcUrl: CONFIG.ckbRpcUrl });
+      const tournaments = await cs.scanTournaments();
       return { ok: true, tournaments };
     } catch (e) {
       return { ok: false, reason: e.message };
