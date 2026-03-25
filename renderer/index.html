@@ -2090,6 +2090,9 @@ function renderBrowseList() {
   // Filter by state chip
   if (_browseFilter !== 'ALL') ts = ts.filter(t => t.state === _browseFilter);
 
+  // Sort newest first
+  ts.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
   // Filter by search query (game, ID, mode)
   if (q) ts = ts.filter(t =>
     (t.gameId  || '').toLowerCase().includes(q) ||
