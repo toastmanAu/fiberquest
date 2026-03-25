@@ -319,6 +319,12 @@ class Tournament extends EventEmitter {
         console.log(`[Tournament] Assembled signed tx for ${player.name} — submitting (dumped to /tmp/fq-signed-tx.json)`);
         const txHash = await this._wallet.sendRawTx(signedTx);
         console.log(`[Tournament] ✅ Deposit submitted for ${player.name}: ${txHash}`);
+        // For distributed participants: mark paid immediately on tx submission
+        // The organiser discovers deposits on-chain; we just need to wait for ACTIVE
+        if (this.tournamentMode === 'distributed' && this._organizerAddress) {
+          this.markPaid(playerId);
+          console.log(`[Tournament] ${player.name} marked paid (distributed — tx submitted to organiser)`);
+        }
       } catch (e) {
         console.error(`[Tournament] ❌ Deposit failed for ${player.name}:`, e.message);
         this.emit('error', new Error(`Deposit failed for ${player.name}: ${e.message}`));
@@ -338,8 +344,10 @@ class Tournament extends EventEmitter {
     console.log(`[Tournament] JoyID callback: ${callbackUrl}`);
     this.emit('sign_url', { playerId, name: player.name, signUrl, dataMarker });
 
-    // Start per-slot chain watcher now that we have the marker
-    this._watchSlotDeposit(playerId, dataMarker);
+    // Start per-slot chain watcher (organiser only — participant can't see organiser's cells)
+    if (!this._organizerAddress || this._organizerAddress === this._wallet?.address) {
+      this._watchSlotDeposit(playerId, dataMarker);
+    }
 
     return { playerId, signUrl, dataMarker, rawTx };
   }
