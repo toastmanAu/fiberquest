@@ -673,9 +673,14 @@ function setupTournamentIPC() {
       organizerAddress: cell.organizerAddress,
     });
     t._organizerAddress = cell.organizerAddress;
+
+    // Auto-register this player with the correct slot index
+    await t.addPlayer(myPlayerId, myName, { slotIndex: mySlotIndex });
+    console.log(`[Main] Auto-registered ${myName} at slot ${mySlotIndex}`);
+
     // Start polling chain for state changes
     t.startDistributedPolling();
-    console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId} (organizer: ${cell.organizerAddress?.slice(0,30)}...)`);
+    console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId} slot ${mySlotIndex} (organizer: ${cell.organizerAddress?.slice(0,30)}...)`);
     return { ...t.status(), organizerAddress: cell.organizerAddress };
   });
 }

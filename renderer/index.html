@@ -2161,7 +2161,16 @@ async function joinDistributedTournament(tournamentId) {
     retroLog(`Joining distributed tournament as ${playerName}...`, 'info');
     currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
     retroLog(`Joined! Tournament: ${tournamentId}`, 'ok');
+    // Player already auto-registered by joinDistributed — go straight to waiting room
+    // The waiting room will show the JoyID connect QR for payment
     showWaitingRoom();
+    // Auto-trigger the connect flow for our player
+    if (currentTournament.tournamentMode === 'distributed') {
+      setTimeout(() => {
+        const connectBtn = document.querySelector('.slot-button');
+        if (connectBtn) connectBtn.click();
+      }, 500);
+    }
   } catch (e) {
     retroLog('Join failed: ' + (e.message || e), 'error');
   }
