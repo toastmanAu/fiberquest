@@ -393,6 +393,55 @@ class Tournament extends EventEmitter {
    */
   async pollPayments() {
     if (this.state !== 'WAITING_PLAYERS') return;
+
+    // ── Distributed: scan chain cell for remote player deposits ──────────
+    if (this.tournamentMode === 'distributed' && this._chainStore) {
+      try {
+        const cells = await this._chainStore.scanTournaments(this.id);
+        if (cells.length > 0) {
+          const cell = cells[0];
+          const onChainPlayers = cell.players || [];
+          for (const cp of onChainPlayers) {
+            // Discover remote players we don't know about yet
+            if (!this.players[cp.id] && cp.paid) {
+              this.players[cp.id] = {
+                name: cp.name || cp.id,
+                slotIndex: Object.keys(this.players).length,
+                paid: true,
+                score: 0,
+                joinedAt: Date.now(),
+                fiberPeerId: cp.fiberPeerId || null,
+                fiberAddr: cp.fiberAddr || null,
+                senderAddress: null,
+                payoutInvoice: null,
+                entryInvoice: null,
+                paymentHash: null,
+              };
+              this.scores[cp.id] = 0;
+              console.log(`[Tournament] Discovered remote player: ${cp.name || cp.id} (paid ✅)`);
+              this.emit('player_paid', { playerId: cp.id, name: cp.name || cp.id });
+            }
+            // Mark known players as paid if chain shows them paid
+            if (this.players[cp.id] && !this.players[cp.id].paid && cp.paid) {
+              this.players[cp.id].paid = true;
+              console.log(`[Tournament] Remote player ${cp.id} confirmed paid via chain`);
+              this.emit('player_paid', { playerId: cp.id, name: this.players[cp.id].name });
+            }
+          }
+          // Check if all slots filled and paid
+          const paidCount = Object.values(this.players).filter(p => p.paid).length;
+          if (paidCount >= this.maxPlayers) {
+            console.log('[Tournament] All players paid (distributed) — starting');
+            this.start().catch(e => this.emit('error', e));
+            return;
+          }
+        }
+      } catch (e) {
+        // Non-fatal — will retry next poll
+      }
+    }
+
+    // ── Fiber payment check (local mode) ─────────────────────────────────
     try {
       const payments = await this.fiber.listPayments({ limit: 50 });
       const received = payments?.payments || [];
@@ -405,7 +454,6 @@ class Tournament extends EventEmitter {
         }
       }
     } catch (e) {
-      // list_payments can return Unauthorized if biscuit auth enabled — non-fatal
       if (!e.message?.includes('Unauthorized')) {
         console.warn('[Tournament] Payment poll error:', e.message);
       }
