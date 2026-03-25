@@ -663,6 +663,14 @@ class Tournament extends EventEmitter {
   }
 
   _updateScores(ramState) {
+    // Distributed: only update the local player's score from RAM
+    if (this.tournamentMode === 'distributed' && this.myPlayerId) {
+      const score = decodeScore(ramState, this.gameDef, this.mode);
+      this.scores[this.myPlayerId] = score;
+      if (this.players[this.myPlayerId]) this.players[this.myPlayerId].score = score;
+      return;
+    }
+
     // For single-player games: all players share the same RAM
     // Multi-player: game defs should have per-player address prefixes (p1_, p2_)
     const playerIds = Object.keys(this.players);
@@ -878,10 +886,21 @@ class Tournament extends EventEmitter {
           });
           this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
         }
-        // Detect tournament end
-        if ((cell.state === 'SETTLING' || cell.state === 'COMPLETE') && this.state === 'ACTIVE') {
-          console.log(`[Tournament] Chain: tournament is ${cell.state} — submitting score`);
+        // Detect tournament settling — submit our score
+        if (cell.state === 'SETTLING' && this.state === 'ACTIVE') {
+          console.log(`[Tournament] Chain: tournament is SETTLING — submitting score`);
           this._endTournament('time_limit');
+        }
+        // Detect tournament complete — show results directly
+        if (cell.state === 'COMPLETE' && this.state !== 'COMPLETE' && this.state !== 'PAYING') {
+          console.log(`[Tournament] Chain: tournament COMPLETE — winner: ${cell.winner}`);
+          clearInterval(this._distributedPollInterval);
+          if (this.engine) this.engine.stop();
+          this.state = 'COMPLETE';
+          const board = this._getScoreBoard();
+          const winner = cell.winner ? { playerId: cell.winner, name: this.players[cell.winner]?.name || cell.winner } : board[0];
+          this.emit('winner', { winner, board, reason: 'distributed_consensus', totalPot: this.entryFee * this.maxPlayers, isDraw: false });
+          this.emit('complete', { tournamentId: this.id, winner, board, payouts: [], totalPot: this.entryFee * this.maxPlayers, isDraw: false });
         }
       } catch (e) {
         // Non-fatal — will retry next interval
