@@ -1370,7 +1370,15 @@ function updateModes() {
   sel.innerHTML = modes.length
     ? modes.map(m => `<option value="${m.id}">${m.name}</option>`).join('')
     : '<option value="">No modes defined</option>';
+  sel.onchange = applyModeDefaults;
+  applyModeDefaults();
   updateLaunchBtn();
+}
+function applyModeDefaults() {
+  const game = gamesList.find(g => g.id === document.getElementById('gameSelect').value);
+  const mode = (game?.tournament_modes || []).find(m => m.id === document.getElementById('modeSelect').value);
+  if (mode?.time_limit_minutes) document.getElementById('timeLimit').value = mode.time_limit_minutes;
+  if (mode?.players) document.getElementById('playerCount').value = mode.players;
 }
 function updateLaunchBtn() {
   const btn = document.getElementById('launchBtn');
