@@ -121,11 +121,17 @@ let activeSession    = null;   // SessionLogger for current game session
 // ── Window ─────────────────────────────────────────────────────────────────
 
 function createWindow() {
+  // Adapt to screen size — use 90% of available display, capped at defaults
+  const { screen } = require('electron');
+  const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
+  const winW = Math.min(1280, Math.round(screenW * 0.95));
+  const winH = Math.min(800, Math.round(screenH * 0.95));
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: winW,
+    height: winH,
+    minWidth: 640,
+    minHeight: 480,
     backgroundColor: '#0d0d0d',
     webPreferences: {
       nodeIntegration: false,
@@ -803,6 +809,25 @@ app.whenReady().then(async () => {
     }
   } catch (e) {
     console.warn('[Main] Node auto-detect failed:', e.message)
+  }
+
+  // Auto-detect biscuit auth token if not configured
+  if (!CONFIG.fiberAuthToken) {
+    const tokenPaths = [
+      path.join(process.env.HOME || '', '.fiber-testnet', '.secrets', 'biscuit-token.txt'),
+      path.join(process.env.HOME || '', '.fiber-mainnet', '.secrets', 'biscuit-token.txt'),
+      path.join(process.env.HOME || '', '.fiber', '.secrets', 'biscuit-token.txt'),
+    ];
+    for (const tp of tokenPaths) {
+      try {
+        const token = fs.readFileSync(tp, 'utf8').trim();
+        if (token) {
+          CONFIG.fiberAuthToken = token;
+          console.log(`[Main] Auto-detected biscuit token: ${tp}`);
+          break;
+        }
+      } catch (_) {}
+    }
   }
 
   // Init Fiber client
