@@ -558,37 +558,25 @@ class Tournament extends EventEmitter {
       timeLimitMs: this.timeLimitMs,
     });
 
-    // Write all phase timestamps to chain — every agent syncs to these
+    // Write absolute end timestamps to chain — both agents end at the same moment
     if (this._chainStore && this.tournamentMode === 'distributed') {
-      const SYNC_DELAY_MS = 30000;  // 30s for chain confirmation + polling
       const SUBMISSION_WINDOW_MS = 60000; // 60s to submit scores after game ends
 
-      const startsAt           = Date.now() + SYNC_DELAY_MS;
-      const endsAt             = startsAt + this.timeLimitMs;
+      const endsAt             = Date.now() + this.timeLimitMs;
       const submissionDeadline = endsAt + SUBMISSION_WINDOW_MS;
-      const resolvesAt         = submissionDeadline;
 
-      this._startsAt           = startsAt;
       this._endsAt             = endsAt;
       this._submissionDeadline = submissionDeadline;
-      this._resolvesAt         = resolvesAt;
 
-      // Set our timer to the synced end time
-      clearTimeout(this._timer);
-      this._startedAt = startsAt;
-      this._timer = setTimeout(() => this._endTournament('time_limit'), endsAt - Date.now());
-
-      console.log(`[Tournament] Phase timestamps:`);
-      console.log(`  startsAt:           ${new Date(startsAt).toISOString()} (in ${SYNC_DELAY_MS/1000}s)`);
-      console.log(`  endsAt:             ${new Date(endsAt).toISOString()}`);
+      console.log(`[Tournament] Distributed phases:`);
+      console.log(`  endsAt:             ${new Date(endsAt).toISOString()} (in ${this.timeLimitMs/60000} min)`);
       console.log(`  submissionDeadline: ${new Date(submissionDeadline).toISOString()}`);
-      console.log(`  resolvesAt:         ${new Date(resolvesAt).toISOString()}`);
 
       this._chainStore.scanTournaments(this.id).then(cells => {
         if (cells[0]) {
           this._chainStore.activateTournament(cells[0].outPoint, {
             ...cells[0], ...this._chainData(),
-            startsAt, endsAt, submissionDeadline, resolvesAt
+            endsAt, submissionDeadline
           })
             .then(r => console.log(`[Tournament] Chain cell updated to ACTIVE: ${r.txHash}`))
             .catch(e => console.warn(`[Tournament] Chain ACTIVE update failed: ${e.message}`));
@@ -919,37 +907,31 @@ class Tournament extends EventEmitter {
         if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') && !this._distributedStarted) {
           this._distributedStarted = true;
 
-          // Read all phase timestamps from chain
-          const startsAt           = cell.startsAt || Date.now();
-          const endsAt             = cell.endsAt || (startsAt + this.timeLimitMs);
+          // Read absolute end timestamps from chain
+          const endsAt             = cell.endsAt || (Date.now() + this.timeLimitMs);
           const submissionDeadline = cell.submissionDeadline || (endsAt + 60000);
-          const resolvesAt         = cell.resolvesAt || submissionDeadline;
 
-          this._startsAt           = startsAt;
           this._endsAt             = endsAt;
           this._submissionDeadline = submissionDeadline;
-          this._resolvesAt         = resolvesAt;
 
-          const waitMs = Math.max(0, startsAt - Date.now());
-          console.log(`[Tournament] Chain: ACTIVE — phases:`);
-          console.log(`  starts in ${Math.round(waitMs/1000)}s, ends at ${new Date(endsAt).toISOString()}`);
-          console.log(`  submission deadline: ${new Date(submissionDeadline).toISOString()}`);
-
-          // Wait until synced start, then launch
-          setTimeout(() => {
-            this._startedAt = startsAt;
-            this.emit('started', {
-              tournamentId: this.id,
-              game: this.gameDef?.name,
-              mode: this.mode?.name,
-              players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
-              timeLimitMs: this.timeLimitMs,
-            });
-            this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
-          }, waitMs);
-
-          // Set timer to fire at endsAt — same moment as organiser
           const endDelay = Math.max(0, endsAt - Date.now());
+          const remainingMinutes = Math.round(endDelay / 60000 * 10) / 10;
+          console.log(`[Tournament] Chain: ACTIVE — starting immediately`);
+          console.log(`  endsAt: ${new Date(endsAt).toISOString()} (${remainingMinutes} min remaining)`);
+          console.log(`  submissionDeadline: ${new Date(submissionDeadline).toISOString()}`);
+
+          // Start immediately — don't wait
+          this._startedAt = Date.now();
+          this.emit('started', {
+            tournamentId: this.id,
+            game: this.gameDef?.name,
+            mode: this.mode?.name,
+            players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
+            timeLimitMs: endDelay, // remaining time, not full duration
+          });
+          this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
+
+          // Set timer to fire at endsAt — same absolute moment as organiser
           this._timer = setTimeout(() => this._endTournament('time_limit'), endDelay);
           console.log(`[Tournament] Timer set: game ends in ${Math.round(endDelay/1000)}s`);
         }
