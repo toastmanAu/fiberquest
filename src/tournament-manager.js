@@ -904,15 +904,16 @@ class Tournament extends EventEmitter {
       this.startDistributedPolling();
       this.emit('settling', { reason, tournamentId: this.id, message: 'Waiting for all agents to submit scores' });
 
-      // Timeout: if not all scores after 2× settlement buffer, resolve with what we have
+      // Timeout: if not all scores after 2× settlement buffer, resolve with local scores
       setTimeout(() => {
         if (this.state === 'SETTLING') {
-          console.log('[Tournament] Settlement timeout — resolving with available scores');
-          // Score 0 for anyone who didn't submit
+          console.log('[Tournament] Settlement timeout — using local scores for unsubmitted players');
           for (const pid of Object.keys(this.players)) {
             if (!this.scoreSubmissions[pid]) {
-              this.scoreSubmissions[pid] = { score: 0, koCount: 0, submittedAt: null };
-              console.log(`[Tournament] ${pid} forfeited (no score submitted)`);
+              // Use locally tracked score instead of forfeiting
+              const localScore = this.scores[pid] || 0;
+              this.scoreSubmissions[pid] = { score: localScore, koCount: 0, submittedAt: Date.now() };
+              console.log(`[Tournament] ${pid} score from local: ${localScore}`);
             }
           }
           this._resolveDistributedWinner();
