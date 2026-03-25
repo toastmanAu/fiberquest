@@ -862,8 +862,9 @@ class Tournament extends EventEmitter {
             this._resolveDistributedWinner();
           }
         }
-        // Detect state changes from organizer
-        if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED')) {
+        // Detect state changes from organizer (only fire once)
+        if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') && !this._distributedStarted) {
+          this._distributedStarted = true;
           console.log('[Tournament] Chain: tournament is ACTIVE — starting local engine');
           this.emit('started', {
             tournamentId: this.id,
