@@ -1207,15 +1207,18 @@ class TournamentManager extends EventEmitter {
     t.on('error',             e => { log('error', e);             this.emit('error',             e); });
 
     // Write escrow cell to CKB (async — non-blocking, logs result)
-    if (this.chainStore) {
+    // Skip for distributed joins — the escrow already exists on-chain
+    if (this.chainStore && !opts.skipEscrow) {
       t._chainStore = this.chainStore;
       this._writeEscrowCell(t).catch(e =>
         console.warn('[TournamentManager] Escrow cell write failed:', e.message)
       );
+    } else if (this.chainStore) {
+      t._chainStore = this.chainStore;
     }
 
     // Early snapshot as fallback — _writeEscrowCell will overwrite with a post-escrow snapshot
-    if (this.wallet) {
+    if (this.wallet && !opts.skipEscrow) {
       this.wallet.snapshotOutpoints()
         .then(snap => {
           if (!t._depositSnapshot) {  // don't overwrite the post-escrow snapshot

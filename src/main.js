@@ -645,7 +645,7 @@ function setupTournamentIPC() {
     if (!cells.length) throw new Error('Tournament not found on chain: ' + tournamentId);
     const cell = cells[0];
 
-    // Create a local tournament mirror from on-chain data
+    // Create a local tournament mirror from on-chain data (skip escrow — we're joining, not creating)
     const t = await tournamentManager.create({
       id:               cell.id,
       gameId:           cell.gameId,
@@ -656,6 +656,7 @@ function setupTournamentIPC() {
       currency:         cell.currency,
       tournamentMode:   'distributed',
       myPlayerId:       myPlayerId,
+      skipEscrow:       true,
     });
     // Start polling chain for state changes
     t.startDistributedPolling();
