@@ -470,13 +470,23 @@ function setupIPC() {
       // the launch command to a file. A separate watcher script (ra-watcher.sh)
       // picks it up and launches RetroArch from a clean process tree.
       // Start watcher: ./scripts/ra-watcher.sh (run in a separate terminal)
-      // Build launch command with display env vars for Wayland/X11 compatibility
+      // Build launch command with display env vars for Wayland/X11 compatibility.
+      // Detect display even if Electron doesn't have it (e.g. launched from bare terminal).
       const displayEnv = [];
-      if (process.env.WAYLAND_DISPLAY) displayEnv.push(`WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY}`);
+      const uid = process.getuid?.() ?? 1000;
+      const runtimeDir = process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
+      const waylandSocket = `${runtimeDir}/wayland-0`;
+      if (process.env.WAYLAND_DISPLAY) {
+        displayEnv.push(`WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY}`);
+      } else if (fs.existsSync(waylandSocket)) {
+        displayEnv.push('WAYLAND_DISPLAY=wayland-0');
+        console.log('[Main] Auto-detected Wayland socket for RetroArch launch');
+      }
       if (process.env.DISPLAY) displayEnv.push(`DISPLAY=${process.env.DISPLAY}`);
-      if (process.env.XDG_RUNTIME_DIR) displayEnv.push(`XDG_RUNTIME_DIR=${process.env.XDG_RUNTIME_DIR}`);
-      const envPrefix = displayEnv.length ? displayEnv.join(' ') + ' ' : '';
+      displayEnv.push(`XDG_RUNTIME_DIR=${runtimeDir}`);
+      const envPrefix = displayEnv.join(' ') + ' ';
       const launchCmd = `${envPrefix}flatpak run org.libretro.RetroArch -L "${game.core}" "${romPath}"`;
+      console.log(`[Main] Launch cmd: ${launchCmd.slice(0, 200)}...`);
       fs.writeFileSync('/tmp/fq-ra-launch.cmd', launchCmd);
       console.log(`[Main] RetroArch launch queued: ${game.name || gameId}`);
 
