@@ -12,6 +12,8 @@ const os     = require('os')
 const crypto = require('crypto')
 const CKB = require('@nervosnetwork/ckb-sdk-core').default
 const utils = require('@nervosnetwork/ckb-sdk-utils')
+const { buildJoyIDURL, buildJoyIDSignMessageURL, encodeSearch, decodeSearch, base64urlToHex } = require('@joyid/common')
+const { calculateChallenge, buildSignedTx } = require('@joyid/ckb')
 
 /** Return first non-loopback IPv4 address on the LAN */
 function getLocalIP () {
@@ -39,14 +41,17 @@ const SECP256K1_DEP_OUTPOINT_MAINNET = {
 // JoyID lock constants (from @joyid/ckb)
 const JOYID_CODE_HASH_TESTNET = '0xd23761b364210735c19c60561d213fb3beae2fd6172743719eff6920e020baac'
 const JOYID_CODE_HASH_MAINNET = '0xd00c84f0ec8fd441c38bc3f87a371f547190f2fcff88e642bc5bf54b9e318323'
-const JOYID_DEP_TESTNET = {
-  outPoint: { txHash: '0x4dcf3f3b09efac8995d6cbee87c5345e812d310094651e0c3d9a730f32dc9263', index: '0x0' },
-  depType: 'depGroup',
-}
-const JOYID_DEP_MAINNET = {
-  outPoint: { txHash: '0x06d4b4cc802115633b0ed89fac859504b1c08c93869ee9748b1d17c1d0e149ae', index: '0x0' },
-  depType: 'depGroup',
-}
+// JoyID requires 5 cell deps (CCC SDK style — the old dep_group cell was consumed)
+const JOYID_DEPS_TESTNET = [
+  { outPoint: { txHash: '0x4a596d31dc35e88fb1591debbf680b04a44b4a434e3a94453c21ea8950ffb4d9', index: '0x0' }, depType: 'code' },
+  { outPoint: { txHash: '0x4a596d31dc35e88fb1591debbf680b04a44b4a434e3a94453c21ea8950ffb4d9', index: '0x1' }, depType: 'code' },
+  { outPoint: { txHash: '0xf2c9dbfe7438a8c622558da8fa912d36755271ea469d3a25cb8d3373d35c8638', index: '0x1' }, depType: 'code' },
+  { outPoint: { txHash: '0x95ecf9b41701b45d431657a67bbfa3f07ef7ceb53bf87097f3674e1a4a19ce62', index: '0x1' }, depType: 'code' },
+  { outPoint: { txHash: '0x8b3255491f3c4dcc1cfca33d5c6bcaec5409efe4bbda243900f9580c47e0242e', index: '0x1' }, depType: 'code' },
+]
+const JOYID_DEPS_MAINNET = [
+  { outPoint: { txHash: '0xf05188e5f3a6767fc4687faf45ba5f1a6e25d3ada6129dae8722cb282f262493', index: '0x0' }, depType: 'depGroup' },
+]
 
 // Deposit output marker prefix — stored in outputsData[0] so each player slot is unambiguous
 // Format: hex(tournamentId + '-' + slotIndex)  e.g. "fq_abc_1234-0"
@@ -81,6 +86,7 @@ class AgentWallet {
     this._callbackPort    = opts.callbackPort || 8766
     this._callbackServer  = null
     this._callbackHandlers = new Map()  // callbackId → (signedTx) => void
+    this._redirectStore    = new Map()  // shortId → longUrl (for QR-friendly short URLs)
   }
 
   // ── JoyID callback server ─────────────────────────────────────────────────
@@ -93,6 +99,7 @@ class AgentWallet {
   _decodeJoyIDData (raw) {
     if (!raw) return null
     const str = raw.startsWith('?') ? raw.slice(1) : raw
+    try { return decodeSearch(str) } catch { /* fall through to manual parse */ }
     const out = {}
     for (const pair of str.split('&')) {
       if (!pair) continue
@@ -109,6 +116,18 @@ class AgentWallet {
    * JoyID redirects the phone browser back to:
    *   http://<localIP>:<port>/joyid/<callbackId>?joyid-redirect=true&_data_=<qss-encoded DappResponse>
    */
+  /**
+   * Store a long URL and return a short local redirect URL safe to encode as QR.
+   * e.g. http://192.168.x.x:8766/r/<shortId>
+   */
+  shortenUrl (longUrl, meta = {}) {
+    this.startCallbackServer()
+    const shortId = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+    this._redirectStore.set(shortId, { longUrl, meta })
+    const localIP = getLocalIP()
+    return `http://${localIP}:${this._callbackPort}/r/${shortId}`
+  }
+
   startCallbackServer () {
     if (this._callbackServer) return  // already running
     this._callbackServer = http.createServer((req, res) => {
@@ -116,6 +135,64 @@ class AgentWallet {
       console.log(`[AgentWallet] Callback server ← ${req.method} ${req.url}`)
       try {
         const url  = new URL(req.url, `http://localhost:${this._callbackPort}`)
+
+        // Short URL redirect — /r/<shortId>
+        const rMatch = url.pathname.match(/^\/r\/([a-f0-9]+)$/)
+        if (rMatch) {
+          const entry = this._redirectStore.get(rMatch[1])
+          if (!entry) { res.writeHead(404); res.end('Not found'); return }
+          const { longUrl, meta } = entry
+          // All short URLs: plain redirect — /sign-ckb uses commuType:redirect so
+          // JoyID will redirect back to our callbackUrl directly, no bridge page needed.
+          res.writeHead(302, { Location: longUrl })
+          res.end()
+          return
+        }
+
+        // SSE keepalive — keeps bridge tab active so iOS won't suspend it
+        if (url.pathname === '/keepalive') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.write('data: connected\n\n')
+          const ping = setInterval(() => {
+            if (res.destroyed) { clearInterval(ping); return }
+            res.write('data: ping\n\n')
+          }, 10000)
+          req.on('close', () => clearInterval(ping))
+          return
+        }
+
+        // Popup callback — bridge page POSTs the postMessage payload here
+        const popupMatch = url.pathname.match(/^\/joyid-popup\/([a-f0-9]+)$/)
+        if (popupMatch && req.method === 'POST') {
+          const cbId = popupMatch[1]
+          if (!this._callbackHandlers.has(cbId)) { res.writeHead(404); res.end('Not found'); return }
+          let body = ''
+          req.on('data', chunk => { body += chunk })
+          req.on('end', () => {
+            try {
+              let payload
+              try { payload = JSON.parse(body) } catch { payload = this._decodeJoyIDData(body) }
+              const data = payload?.data ?? payload
+              console.log('[AgentWallet] JoyID popup result:', JSON.stringify(data)?.slice(0, 200))
+              const handler = this._callbackHandlers.get(cbId)
+              this._callbackHandlers.delete(cbId)
+              res.writeHead(200); res.end('OK')
+              Promise.resolve(handler(data)).catch(e =>
+                console.error('[AgentWallet] JoyID popup callback error:', e.message)
+              )
+            } catch (e) {
+              console.error('[AgentWallet] JoyID popup parse error:', e.message)
+              res.writeHead(400); res.end('Bad request')
+            }
+          })
+          return
+        }
+
         // cbId is in the path; joyid-redirect=true and _data_ are added by JoyID
         const cbId  = url.pathname.replace(/^\/joyid\//, '').replace(/\/$/, '')
         const raw   = url.searchParams.get('_data_')
@@ -221,7 +298,8 @@ class AgentWallet {
     url.searchParams.set('_data_', dataStr)
     console.log('[AgentWallet] JoyID connect URL (first 200):', url.href.slice(0, 200))
     console.log('[AgentWallet] Callback URL:', callbackUrl)
-    return url.href
+    // Shorten so the connect QR is easy to scan on any phone
+    return this.shortenUrl(url.href)
   }
 
   async _rpc (method, params = []) {
@@ -368,9 +446,9 @@ class AgentWallet {
     // Detect player lock type to pick the right cell dep
     const isJoyID = playerLock.codeHash === JOYID_CODE_HASH_TESTNET ||
                     playerLock.codeHash === JOYID_CODE_HASH_MAINNET
-    const playerCellDep = isJoyID
-      ? (this.isMainnet ? JOYID_DEP_MAINNET : JOYID_DEP_TESTNET)
-      : { outPoint: this.secp256k1Dep, depType: 'depGroup' }
+    const playerCellDeps = isJoyID
+      ? (this.isMainnet ? JOYID_DEPS_MAINNET : JOYID_DEPS_TESTNET)
+      : [{ outPoint: this.secp256k1Dep, depType: 'depGroup' }]
 
     // Gather player inputs
     const playerCells = await this.getCellsForLock(playerLock, 50)
@@ -403,19 +481,33 @@ class AgentWallet {
     // Player secp256k1/JoyID lock: also ~53 bytes → min 61 CKB change
     const changeMinShannon = 61n * 100_000_000n
 
-    const outputs     = [{ capacity: `0x${depositCapacity.toString(16)}`, lock: this.lockScript, type: null }]
+    const outputs     = [{ capacity: `0x${depositCapacity.toString(16)}`, lock: this.lockScript }]
     const outputsData = [marker]
     if (changeShannon >= changeMinShannon) {
-      outputs.push({ capacity: `0x${changeShannon.toString(16)}`, lock: playerLock, type: null })
+      outputs.push({ capacity: `0x${changeShannon.toString(16)}`, lock: playerLock })
       outputsData.push('0x')
     }
     // else: change absorbed into fee (only happens if player barely has enough)
 
-    const witnesses = inputs.map((_, i) => i === 0 ? '0x' : '0x')
+    // JoyID needs a WitnessArgs with a pre-allocated lock field (zeros) sized for its
+    // WebAuthn secp256r1 signature. Without this the sighash can't be computed correctly.
+    // WitnessArgs molecule: [full_size][offset0][offset1][offset2][lock_length][lock_zeros]
+    // lock = BytesOpt::Some(300 zero bytes) — 300 is a safe upper-bound for JoyID's signature.
+    const LOCK_SIZE = 300
+    const WA_FULL = 20 + LOCK_SIZE  // 4 + 12 offsets + 4 Bytes length + LOCK_SIZE
+    const waBuf = Buffer.alloc(WA_FULL)
+    waBuf.writeUInt32LE(WA_FULL,   0)   // full_size
+    waBuf.writeUInt32LE(16,        4)   // offset[0] — lock starts right after 16-byte header
+    waBuf.writeUInt32LE(WA_FULL,   8)   // offset[1] — input_type starts at end (None)
+    waBuf.writeUInt32LE(WA_FULL,  12)   // offset[2] — output_type starts at end (None)
+    waBuf.writeUInt32LE(LOCK_SIZE, 16)  // lock Bytes length
+    // bytes 20..WA_FULL are zero-initialised by Buffer.alloc
+    const JOYID_WITNESS_PLACEHOLDER = '0x' + waBuf.toString('hex')
+    const witnesses = inputs.map((_, i) => i === 0 ? JOYID_WITNESS_PLACEHOLDER : '0x')
 
     const rawTx = {
       version:     '0x0',
-      cellDeps:    [playerCellDep],
+      cellDeps:    [...playerCellDeps],
       headerDeps:  [],
       inputs,
       outputs,
@@ -427,37 +519,108 @@ class AgentWallet {
   }
 
   /**
-   * Encode a raw CKB transaction as a JoyID deep-link URL for mobile signing.
-   * Replicates @joyid/common buildJoyIDURL without importing the browser SDK.
+   * Build a JoyID sign URL using /sign-message with redirect delivery.
    *
-   * JoyID signs the tx and redirects the phone's browser to callbackUrl with
-   * the signed tx in ?_result_=<base64>. The local callback server submits it.
+   * JoyID's /sign-ckb-raw-tx and /sign-ckb both have broken redirect support
+   * (hardcoded DappCommunicationType.Popup). However /sign-message fully supports
+   * redirect — same as /auth which already works in our QR flow.
    *
-   * @param {object} rawTx         - CKBTransaction (camelCase SDK format)
-   * @param {string} playerAddress - signer's CKB address
-   * @param {string} callbackUrl   - local HTTP URL for JoyID redirect (from registerJoyIDCallback)
-   * @returns {string}  Full JoyID deep-link URL
+   * Strategy:
+   *   1. Build raw tx on server (buildPlayerDepositTx)
+   *   2. Compute tx sighash via calculateChallenge (JoyID SDK)
+   *   3. Player signs the challenge hash on /sign-message (redirect)
+   *   4. Callback receives { signature, message, pubkey, keyType }
+   *   5. buildSignedTx assembles the complete signed tx
+   *   6. Submit to CKB
+   *
+   * @param {object} rawTx          - unsigned CKBTransaction from buildPlayerDepositTx
+   * @param {string} playerAddress  - signer's CKB address
+   * @param {string} callbackUrl    - local HTTP URL for JoyID redirect
+   * @returns {string}  Short local URL (encode as QR)
    */
-  buildJoyIDSignTxUrl (rawTx, playerAddress, callbackUrl) {
-    const joyidBase = this.isMainnet ? 'https://app.joy.id' : 'https://testnet.joyid.dev'
+  async buildJoyIDSignTxUrl (rawTx, playerAddress, callbackUrl, { entryFeeCkb } = {}) {
+    const joyidAppURL = this.isMainnet ? 'https://app.joy.id' : 'https://testnet.joyid.dev'
+    const cbId = callbackUrl.split('/joyid/').pop().split('?')[0]
+
+    // Compute the sighash that JoyID needs to sign.
+    // witnessIndexes must include ALL inputs in the same lock group —
+    // the on-chain script hashes all witnesses in the group, not just [0].
+    const witnessIndexes = rawTx.inputs.map((_, i) => i)
+    const rawTxClone = JSON.parse(JSON.stringify(rawTx))
+    const challenge = await calculateChallenge(rawTxClone, witnessIndexes)
+    console.log(`[AgentWallet] Tx challenge for signing: ${challenge}`)
+
+    // Store the raw tx so the callback can assemble the signed version
+    this._pendingRawTxs = this._pendingRawTxs || new Map()
+    this._pendingRawTxs.set(cbId, rawTx)
+
     const request = {
-      tx:             rawTx,
-      signerAddress:  playerAddress,
-      redirectURL:    callbackUrl,
+      joyidAppURL,
       name:           'FiberQuest',
-      witnessIndexes: [0],
+      challenge,
+      isData:         false,
+      address:        playerAddress,
+      redirectURL:    callbackUrl,
+      requestNetwork: 'nervos',
     }
-    const parts = []
-    for (const [k, v] of Object.entries(request)) {
-      if (v === undefined || v === null) continue
-      const val = typeof v === 'object' ? JSON.stringify(v) : String(v)
-      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(val)}`)
+    // /sign-message supports redirect — builds URL with type=redirect
+    const joyidUrl = buildJoyIDSignMessageURL(request, 'redirect')
+    console.log(`[AgentWallet] JoyID sign-message URL (first 200): ${joyidUrl.slice(0, 200)}`)
+    return this.shortenUrl(joyidUrl, { cbId })
+  }
+
+  /**
+   * Assemble a signed CKB transaction from the raw tx + JoyID sign-message response.
+   * @param {string} cbId       - callback ID (links to stored raw tx)
+   * @param {object} signedData - { signature, message, pubkey, keyType } from JoyID
+   * @returns {object} signed CKBTransaction ready to submit
+   */
+  assembleSignedTx (cbId, signedData) {
+    if (!this._pendingRawTxs?.has(cbId)) {
+      throw new Error(`No pending raw tx for callback ${cbId}`)
     }
-    const dataStr = '?' + parts.join('&')
-    const url     = new URL(`${joyidBase}/sign-ckb-raw-tx`)
-    url.searchParams.set('type', 'redirect')
-    url.searchParams.set('_data_', dataStr)
-    return url.href
+    const rawTx = this._pendingRawTxs.get(cbId)
+    this._pendingRawTxs.delete(cbId)
+
+    // JoyID redirect responses return signature + message as base64url,
+    // but buildSignedTx expects raw hex (no 0x prefix). Convert if needed.
+    const isHex = (s) => /^(0x)?[0-9a-f]*$/i.test(s)
+    const normalized = { ...signedData }
+    if (!isHex(normalized.signature)) {
+      normalized.signature = base64urlToHex(normalized.signature)
+    }
+    if (!isHex(normalized.message)) {
+      normalized.message = base64urlToHex(normalized.message)
+    }
+    // Strip 0x prefixes — buildSignedTx concatenates as raw hex
+    if (normalized.pubkey?.startsWith('0x')) normalized.pubkey = normalized.pubkey.slice(2)
+    if (normalized.signature?.startsWith('0x')) normalized.signature = normalized.signature.slice(2)
+    if (normalized.message?.startsWith('0x')) normalized.message = normalized.message.slice(2)
+
+    // Convert DER signature to IEEE P1363 (64 bytes fixed).
+    // JoyID redirect returns DER from WebAuthn; on-chain lock expects IEEE.
+    // mode(1) + pubkey(64) + sig_IEEE(64) = 129 = SECP256R1_PUBKEY_SIG_LEN
+    if (normalized.signature.length !== 128) {  // 128 hex chars = 64 bytes IEEE
+      const derBytes = Buffer.from(normalized.signature, 'hex')
+      const rLen = derBytes[3]
+      let r = derBytes.subarray(4, 4 + rLen).toString('hex')
+      let s = derBytes.subarray(6 + rLen).toString('hex')
+      r = r.length > 64 ? r.slice(-64) : r.padStart(64, '0')
+      s = s.length > 64 ? s.slice(-64) : s.padStart(64, '0')
+      normalized.signature = r + s
+      console.log('[AgentWallet] Converted DER sig to IEEE P1363 (128 hex chars)')
+    }
+
+    console.log('[AgentWallet] keyType:', normalized.keyType,
+                'pubkey len:', normalized.pubkey?.length,
+                'sig len:', normalized.signature?.length,
+                'msg len:', normalized.message?.length)
+
+    const signed = buildSignedTx(rawTx, normalized, [0])
+    // Verify mode byte
+    const lockHex = signed.witnesses[0]
+    console.log('[AgentWallet] witness lock (first 50):', lockHex?.slice(0, 50))
+    return signed
   }
 
   /**
@@ -589,14 +752,27 @@ class AgentWallet {
    * Used for winner payouts when Fiber is unavailable.
    */
   async sendL1Payment (toAddress, amountCkb) {
-    const amountShannon = BigInt(Math.round(amountCkb * 1e8))
-    const toLock = utils.addressToScript(toAddress)
-    const signedTx = await this.buildAndSignTx({
-      outputs: [{ capacity: `0x${amountShannon.toString(16)}`, lock: toLock, type: null }],
-      outputsData: ['0x'],
-    })
+    return this.sendL1BatchPayment([{ toAddress, amountCkb }])
+  }
+
+  /**
+   * Send CKB on L1 to multiple recipients in a single transaction.
+   * Avoids RBF conflicts when paying multiple players.
+   * @param {Array<{toAddress: string, amountCkb: number}>} recipients
+   * @returns {string} txHash
+   */
+  async sendL1BatchPayment (recipients) {
+    const outputs = []
+    const outputsData = []
+    for (const { toAddress, amountCkb } of recipients) {
+      const shannon = BigInt(Math.round(amountCkb * 1e8))
+      outputs.push({ capacity: `0x${shannon.toString(16)}`, lock: utils.addressToScript(toAddress), type: null })
+      outputsData.push('0x')
+    }
+    const signedTx = await this.buildAndSignTx({ outputs, outputsData })
     const txHash = await this.sendRawTx(signedTx)
-    console.log(`[AgentWallet] L1 payment sent: ${amountCkb} CKB → ${toAddress} — tx: ${txHash}`)
+    const summary = recipients.map(r => `${r.amountCkb} CKB → ${r.toAddress.slice(0, 20)}...`).join(', ')
+    console.log(`[AgentWallet] L1 batch payment sent: ${summary} — tx: ${txHash}`)
     return txHash
   }
 }
