@@ -2189,21 +2189,24 @@ function toggleTCard(i) {
 async function joinDistributedTournament(tournamentId) {
   retroLog(`Attempting to join ${tournamentId}...`, 'info');
   const playerName = 'Player-' + Math.random().toString(36).slice(2, 6);
-  const playerId = 'player-' + Date.now().toString(36);
+  const playerId = 'player-0';  // Use player-0 so UI slot matches
   try {
     retroLog(`Joining distributed tournament as ${playerName}...`, 'info');
     currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
     retroLog(`Joined! Tournament: ${tournamentId}`, 'ok');
-    // Player already auto-registered by joinDistributed — go straight to waiting room
-    // The waiting room will show the JoyID connect QR for payment
+    // Player already registered — show waiting room with name pre-filled, auto-trigger JoyID
     showWaitingRoom();
-    // Auto-trigger the connect flow for our player
-    if (currentTournament.tournamentMode === 'distributed') {
-      setTimeout(() => {
-        const connectBtn = document.querySelector('.slot-button');
-        if (connectBtn) connectBtn.click();
-      }, 500);
-    }
+    // Pre-fill name and auto-trigger connect
+    setTimeout(() => {
+      const nameInput = document.getElementById('name-0');
+      if (nameInput) {
+        nameInput.value = playerName;
+        // Skip addPlayerName — player already registered, go straight to connect
+        window.fiberquest.tournament.connectPlayer(currentTournament.id, playerId)
+          .then(() => retroLog('JoyID connect triggered', 'info'))
+          .catch(e => retroLog('Connect failed: ' + e.message, 'error'));
+      }
+    }, 500);
   } catch (e) {
     retroLog('Join failed: ' + (e.message || e), 'error');
   }
