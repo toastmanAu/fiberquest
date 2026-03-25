@@ -943,13 +943,14 @@ class Tournament extends EventEmitter {
       // Step 2: Emit settling to UI
       this.emit('settling', { reason, tournamentId: this.id, message: `Score submitted: ${myScore}. Waiting for other agents...` });
 
-      // Step 3: Poll chain for all scores (same code for organiser + participant)
-      this.startDistributedPolling();
+      // Step 3: Poll chain aggressively for all scores (every 5s during settling)
+      this.startDistributedPolling(5000);
 
-      // Step 4: Timeout — resolve with whatever we have
+      // Step 4: Timeout — resolve with whatever we have (2 minutes to allow chain sync)
+      const SETTLEMENT_TIMEOUT_MS = 120000; // 2 minutes
       setTimeout(() => {
         if (this.state === 'SETTLING') {
-          console.log('[Tournament] Settlement timeout — resolving with available data');
+          console.log('[Tournament] Settlement timeout (2min) — resolving with available data');
           for (const pid of Object.keys(this.players)) {
             if (!this.scoreSubmissions[pid]) {
               const localScore = this.scores[pid] || 0;
@@ -959,7 +960,7 @@ class Tournament extends EventEmitter {
           }
           this._resolveDistributedWinner();
         }
-      }, this.settlementBufferMs * 2);
+      }, SETTLEMENT_TIMEOUT_MS);
       return;
     }
 
