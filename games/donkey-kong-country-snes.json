@@ -50,6 +50,15 @@
 
   "tournament_modes": [
     {
+      "id": "timed_score_5",
+      "name": "Quick Score (5 min)",
+      "description": "Play for 5 minutes. Score = (levels × 100) + (lives × 10) + bananas. Highest score wins.",
+      "players": 2,
+      "win_condition": "highest_score_at_time",
+      "time_limit_minutes": 5,
+      "score_formula": "levels_complete * 100 + p1_lives * 10 + p1_bananas"
+    },
+    {
       "id": "timed_score",
       "name": "Timed High Score (10 min)",
       "description": "Play for 10 minutes. Score = (levels_complete × 100) + (lives × 10) + bananas. Highest score wins.",
