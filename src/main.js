@@ -657,11 +657,14 @@ function setupTournamentIPC() {
       tournamentMode:   'distributed',
       myPlayerId:       myPlayerId,
       skipEscrow:       true,
+      organizerAddress: cell.organizerAddress,  // deposits go here
     });
+    // Store organizer address so deposit tx sends to the right place
+    t._organizerAddress = cell.organizerAddress;
     // Start polling chain for state changes
     t.startDistributedPolling();
-    console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId}`);
-    return t.status();
+    console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId} (organizer: ${cell.organizerAddress?.slice(0,30)}...)`);
+    return { ...t.status(), organizerAddress: cell.organizerAddress };
   });
 }
 

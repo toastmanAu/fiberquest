@@ -275,8 +275,12 @@ class Tournament extends EventEmitter {
     if (!this._wallet) throw new Error('Agent wallet not configured');
 
     // Build the raw deposit tx — agent builds it, player just signs the challenge hash
+    const depositOpts = {};
+    if (this.tournamentMode === 'distributed' && this._organizerAddress) {
+      depositOpts.destinationAddress = this._organizerAddress;
+    }
     const { rawTx, dataMarker } = await this._wallet.buildPlayerDepositTx(
-      playerAddress, this.id, player.slotIndex, this.entryFee
+      playerAddress, this.id, player.slotIndex, this.entryFee, depositOpts
     );
 
     // Extract cbId from callback URL so we can link raw tx to signed response
@@ -1131,6 +1135,7 @@ class Tournament extends EventEmitter {
       winner:               this.winner || null,
       createdAt:            this.createdAt,
       tournamentMode:       this.tournamentMode,
+      organizerAddress:     this._wallet?.address || null,
       scoreSubmissions:     Object.keys(this.scoreSubmissions).length > 0 ? this.scoreSubmissions : null,
     };
   }

@@ -108,6 +108,7 @@ class ChainStore {
       tournamentMode:       tournament.tournamentMode || 'local',
       scoreSubmissions:     tournament.scoreSubmissions || null, // { playerId: { score, koCount, eventLogHash, submittedAt } }
       winnerInvoice:        tournament.winnerInvoice || null,    // Fiber invoice for losers to pay winner
+      organizerAddress:     tournament.organizerAddress || null, // CKB address for player deposits (distributed)
     }
     const json = Buffer.from(JSON.stringify(payload))
     return '0x' + Buffer.concat([MAGIC, Buffer.from([VERSION]), json]).toString('hex')

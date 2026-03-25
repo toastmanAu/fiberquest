@@ -437,7 +437,11 @@ class AgentWallet {
    *
    * @returns {{ rawTx: object, dataMarker: string }}
    */
-  async buildPlayerDepositTx (playerAddress, tournamentId, slotIndex, entryFeeCkb) {
+  async buildPlayerDepositTx (playerAddress, tournamentId, slotIndex, entryFeeCkb, opts = {}) {
+    // For distributed joins, deposit goes to the organizer's address, not this agent
+    const destinationLock = opts.destinationAddress
+      ? utils.addressToScript(opts.destinationAddress)
+      : this.lockScript;
     const playerLock   = utils.addressToScript(playerAddress)
     const entryShannon = BigInt(Math.round(entryFeeCkb * 1e8))
     const feeShannons  = 5000n
@@ -481,7 +485,7 @@ class AgentWallet {
     // Player secp256k1/JoyID lock: also ~53 bytes → min 61 CKB change
     const changeMinShannon = 61n * 100_000_000n
 
-    const outputs     = [{ capacity: `0x${depositCapacity.toString(16)}`, lock: this.lockScript }]
+    const outputs     = [{ capacity: `0x${depositCapacity.toString(16)}`, lock: destinationLock }]
     const outputsData = [marker]
     if (changeShannon >= changeMinShannon) {
       outputs.push({ capacity: `0x${changeShannon.toString(16)}`, lock: playerLock })
