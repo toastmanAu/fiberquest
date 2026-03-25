@@ -891,6 +891,10 @@ class Tournament extends EventEmitter {
     if (this.state !== 'ACTIVE' && this.state !== 'SETTLING') return;
 
     // ── Distributed mode: submit score and wait for others ──────────────
+    // Ensure organiser has a myPlayerId (first local player)
+    if (this.tournamentMode === 'distributed' && !this.myPlayerId) {
+      this.myPlayerId = Object.keys(this.players)[0];
+    }
     if (this.tournamentMode === 'distributed' && reason !== 'distributed_consensus') {
       this.state = 'SETTLING';
       clearTimeout(this._timer);
