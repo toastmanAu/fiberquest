@@ -244,60 +244,42 @@ if [[ $RA_INSTALLED -eq 1 ]]; then
   RA_CORES_DIR="$HOME/.var/app/org.libretro.RetroArch/config/retroarch/cores"
   mkdir -p "$RA_CORES_DIR"
 
-  # Core list: name → libretro filename
-  declare -A CORES=(
-    ["snes9x"]="snes9x_libretro.so"               # SNES
-    ["fceumm"]="fceumm_libretro.so"                # NES
-    ["mgba"]="mgba_libretro.so"                    # GBA
-    ["genesis_plus_gx"]="genesis_plus_gx_libretro.so"  # Genesis/Mega Drive + Master System
-    ["fbneo"]="fbneo_libretro.so"                  # Arcade (FinalBurn Neo)
-  )
-
-  # Buildbot URL — x86_64 has aarch64 doesn't exist, armv7 works as fallback
+  # Determine core source dir — bundled in the FiberQuest repo per architecture
   case "$ARCH" in
-    x86_64)        BB_ARCH="x86_64" ;;
-    aarch64|arm64) BB_ARCH="armv7-neon-hf" ;;  # 32-bit compat works on arm64
-    *)             BB_ARCH="" ;;
+    x86_64)        CORE_ARCH="x86_64" ;;
+    aarch64|arm64) CORE_ARCH="aarch64" ;;
+    *)             CORE_ARCH="" ;;
   esac
-  BB_BASE="https://buildbot.libretro.com/nightly/linux/${BB_ARCH}/latest"
 
+  # Try bundled cores first (from fiberquest/cores/<arch>/)
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  BUNDLED_DIR="${SCRIPT_DIR}/cores/${CORE_ARCH}"
   CORES_INSTALLED=0
-  CORES_FAILED=0
-  for core_name in "${!CORES[@]}"; do
-    core_file="${CORES[$core_name]}"
-    if [[ -f "${RA_CORES_DIR}/${core_file}" ]]; then
-      ok "${core_name} already installed"
+
+  if [[ -d "$BUNDLED_DIR" ]]; then
+    info "Installing bundled cores from ${BUNDLED_DIR}..."
+    for core_file in "$BUNDLED_DIR"/*_libretro.so; do
+      [[ -f "$core_file" ]] || continue
+      core_name="$(basename "$core_file" _libretro.so)"
+      cp "$core_file" "$RA_CORES_DIR/"
+      ok "${core_name} installed"
       CORES_INSTALLED=$((CORES_INSTALLED + 1))
-      continue
-    fi
-
-    if [[ -n "$BB_ARCH" ]]; then
-      info "Downloading ${core_name}..."
-      TMP_ZIP="/tmp/fq_core_${core_name}.zip"
-      if curl -fsSL "${BB_BASE}/${core_file}.zip" -o "$TMP_ZIP" 2>/dev/null; then
-        unzip -qo "$TMP_ZIP" -d "$RA_CORES_DIR" 2>/dev/null && {
-          ok "${core_name} installed"
-          CORES_INSTALLED=$((CORES_INSTALLED + 1))
-        } || {
-          warn "${core_name} unzip failed"
-          CORES_FAILED=$((CORES_FAILED + 1))
-        }
-        rm -f "$TMP_ZIP"
-      else
-        warn "${core_name} download failed — install via RetroArch > Online Updater > Core Downloader"
-        CORES_FAILED=$((CORES_FAILED + 1))
-      fi
+    done
+    ok "${CORES_INSTALLED} cores installed from bundle"
+  else
+    # Fallback: download from GitHub release assets
+    CORES_URL="https://github.com/${GITHUB_REPO}/releases/download/v${APP_VERSION}/cores-${CORE_ARCH}.tar.gz"
+    info "Downloading cores for ${CORE_ARCH}..."
+    TMP_CORES="/tmp/fq-cores.tar.gz"
+    if curl -fsSL "$CORES_URL" -o "$TMP_CORES" 2>/dev/null; then
+      tar xzf "$TMP_CORES" -C "$RA_CORES_DIR" && {
+        CORES_INSTALLED=$(ls "$RA_CORES_DIR"/*_libretro.so 2>/dev/null | wc -l)
+        ok "${CORES_INSTALLED} cores installed from release"
+      } || warn "Core extraction failed"
+      rm -f "$TMP_CORES"
     else
-      warn "Cannot auto-download cores for ${ARCH} — use RetroArch > Online Updater > Core Downloader"
-      break
+      warn "Could not download cores — install via RetroArch > Online Updater > Core Downloader"
     fi
-  done
-
-  if [[ $CORES_INSTALLED -gt 0 ]]; then
-    ok "${CORES_INSTALLED} cores installed (SNES, NES, GBA, Genesis, Arcade)"
-  fi
-  if [[ $CORES_FAILED -gt 0 ]]; then
-    warn "${CORES_FAILED} cores failed — install via RetroArch > Online Updater > Core Downloader"
   fi
 fi
 
