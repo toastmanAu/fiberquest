@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('fiberquest', {
     status:       (tId)                => ipcRenderer.invoke('tournament:status', tId),
     end:          (tId)                => ipcRenderer.invoke('tournament:end', tId),
     sendPayout:   (tId, inv)           => ipcRenderer.invoke('tournament:sendPayout', tId, inv),
+    joinDistributed: (tId, pId, name) => ipcRenderer.invoke('tournament:joinDistributed', tId, pId, name),
+    submitScore:  (tId, pId, data)    => ipcRenderer.invoke('tournament:submitScore', tId, pId, data),
     onEvent:      (cb)                 => ipcRenderer.on('tournament:event', (_, data) => cb(data)),
   },
   // Games

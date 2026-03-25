@@ -877,6 +877,14 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label class="form-label">Tournament Type</label>
+          <select class="form-control" id="tournamentType">
+            <option value="local">Local (same machine)</option>
+            <option value="distributed">Distributed (multi-machine)</option>
+          </select>
+        </div>
+
         <div style="display:flex;gap:var(--sp-sm);margin-top:var(--sp-md)">
           <button class="btn muted" onclick="goHome()">← BACK</button>
           <button id="launchBtn" class="btn muted" style="display:none" onclick="launchGame()">▶ LAUNCH GAME</button>
@@ -1413,6 +1421,7 @@ async function startSetup() {
     return;
   }
 
+  const tournamentType = document.getElementById('tournamentType').value;
   const opts = {
     gameId:               document.getElementById('gameSelect').value,
     mode:                 document.getElementById('modeSelect').value,
@@ -1422,6 +1431,7 @@ async function startSetup() {
     registrationMinutes:  parseInt(document.getElementById('regWindow').value)   || 10,
     timeLimitMinutes:     parseInt(document.getElementById('timeLimit').value)   || 10,
     currency:             document.getElementById('currency').value,
+    tournamentMode:       tournamentType,
   };
   try {
     currentTournament = await window.fiberquest.tournament.create(opts);
@@ -2113,8 +2123,11 @@ function renderBrowseList() {
         <div><span class="t-detail-label">Prize pool: </span><span class="t-detail-val">${t.prizePool || paidCount * (t.entryFee || 0)} CKB</span></div>
         <div><span class="t-detail-label">Created: </span><span class="t-detail-val">${_relTime(t.createdAt)}</span></div>
         ${t.fiberPeerId ? `<div><span class="t-detail-label">Organizer node: </span><span class="t-peer-id">${t.fiberPeerId}</span></div>` : ''}
+        ${t.tournamentMode === 'distributed' ? `<div><span class="t-detail-label">Type: </span><span style="color:var(--purple)">DISTRIBUTED</span></div>` : ''}
         ${t.winner ? `<div><span class="t-detail-label">Winner: </span><span style="color:var(--yellow)">${t.winner}</span></div>` : ''}
         ${playerRows ? `<div style="margin-top:var(--sp-xs);color:var(--muted)">PLAYERS</div>${playerRows}` : ''}
+        ${t.state === 'ESCROW' && t.tournamentMode === 'distributed' ? `<button class="btn" style="margin-top:var(--sp-sm);width:100%" onclick="event.stopPropagation();joinDistributedTournament('${t.id}')">JOIN TOURNAMENT</button>` : ''}
+        ${t.state === 'ESCROW' && (!t.tournamentMode || t.tournamentMode === 'local') ? `<button class="btn muted" style="margin-top:var(--sp-sm);width:100%" onclick="event.stopPropagation()">LOCAL ONLY</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -2122,6 +2135,22 @@ function renderBrowseList() {
 
 function toggleTCard(i) {
   document.getElementById(`tcard-${i}`)?.classList.toggle('expanded');
+}
+
+// ── Join distributed tournament from browse list ─────────
+async function joinDistributedTournament(tournamentId) {
+  const playerName = prompt('Enter your player name:');
+  if (!playerName) return;
+  const playerId = 'player-' + Date.now().toString(36);
+  try {
+    retroLog(`Joining distributed tournament ${tournamentId} as ${playerName}...`, 'info');
+    currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
+    retroLog(`Joined! Waiting for tournament to start...`, 'ok');
+    showWaitingRoom();
+  } catch (e) {
+    alert('Failed to join: ' + e.message);
+    retroLog('Join failed: ' + e.message, 'error');
+  }
 }
 
 // Legacy — kept so any existing callers don't break
