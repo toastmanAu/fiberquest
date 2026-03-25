@@ -2151,17 +2151,16 @@ function toggleTCard(i) {
 
 // ── Join distributed tournament from browse list ─────────
 async function joinDistributedTournament(tournamentId) {
-  const playerName = prompt('Enter your player name:');
-  if (!playerName) return;
+  retroLog(`Attempting to join ${tournamentId}...`, 'info');
+  const playerName = 'Player-' + Math.random().toString(36).slice(2, 6);
   const playerId = 'player-' + Date.now().toString(36);
   try {
-    retroLog(`Joining distributed tournament ${tournamentId} as ${playerName}...`, 'info');
+    retroLog(`Joining distributed tournament as ${playerName}...`, 'info');
     currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
-    retroLog(`Joined! Waiting for tournament to start...`, 'ok');
+    retroLog(`Joined! Tournament: ${tournamentId}`, 'ok');
     showWaitingRoom();
   } catch (e) {
-    alert('Failed to join: ' + e.message);
-    retroLog('Join failed: ' + e.message, 'error');
+    retroLog('Join failed: ' + (e.message || e), 'error');
   }
 }
 
