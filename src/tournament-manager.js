@@ -509,7 +509,8 @@ class Tournament extends EventEmitter {
    * Start the tournament. Attach RAM engine, begin scoring.
    */
   async start() {
-    if (this.state === 'ACTIVE') return;
+    console.log(`[Tournament] start() called — state=${this.state} players=${Object.keys(this.players).length} timer=${!!this._timer}`);
+    if (this.state === 'ACTIVE') { console.log('[Tournament] Already ACTIVE, skipping start'); return; }
     if (this.state !== 'WAITING_PLAYERS' && this.state !== 'CREATED') {
       throw new Error(`Cannot start in state ${this.state}`);
     }
@@ -952,8 +953,11 @@ class Tournament extends EventEmitter {
           this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
 
           // Set timer to fire at endsAt — same absolute moment as organiser
-          this._timer = setTimeout(() => this._endTournament('time_limit'), endDelay);
-          console.log(`[Tournament] Timer set: game ends in ${Math.round(endDelay/1000)}s`);
+          this._timer = setTimeout(() => {
+            console.log(`[Tournament] ⏰ Timer fired — ending tournament`);
+            this._endTournament('time_limit');
+          }, endDelay);
+          console.log(`[Tournament] Timer set: game ends in ${Math.round(endDelay/1000)}s (timer ID: ${this._timer})`);
         }
 
         // Detect tournament complete — show results
