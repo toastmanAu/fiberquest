@@ -768,7 +768,10 @@ class Tournament extends EventEmitter {
    * Submit this agent's local score data on-chain (distributed mode).
    */
   async _submitMyScore() {
-    if (!this.myPlayerId || !this._chainStore) return;
+    console.log(`[Tournament] _submitMyScore: myPlayerId=${this.myPlayerId} chainStore=${!!this._chainStore} wallet=${!!this._chainStore?.wallet}`);
+    if (!this.myPlayerId) { console.warn('[Tournament] No myPlayerId — skipping score submit'); return; }
+    if (!this._chainStore) { console.warn('[Tournament] No chainStore — skipping score submit'); return; }
+    if (!this._chainStore.wallet) { console.warn('[Tournament] ChainStore has no wallet — score submit will fail on write'); }
     const crypto = require('crypto');
     const score = this.scores[this.myPlayerId] || 0;
     const koCount = this._koCount?.[this.myPlayerId] || 0;
