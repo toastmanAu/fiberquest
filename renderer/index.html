@@ -1844,7 +1844,21 @@ function handleTournamentEvent(ev) {
   // Ignore events from other tournaments (stale cancelled events etc)
   if (ev.tournamentId && currentTournament?.id && ev.tournamentId !== currentTournament.id) return;
   switch (ev.event) {
-    case 'started': retroLog('Tournament started — GO!', 'ok'); showLive(ev); break;
+    case 'started':
+      retroLog('Tournament started — GO!', 'ok');
+      showLive(ev);
+      // Auto-launch game for distributed tournaments (local launches on all-paid)
+      if (currentTournament?.tournamentMode === 'distributed') {
+        window.fiberquest.retroarch.isLocal().then(isLocal => {
+          if (isLocal && currentTournament?.gameId) {
+            retroLog('Auto-launching game...', 'info');
+            window.fiberquest.retroarch.launch(currentTournament.gameId)
+              .then(r => { if (!r.ok) retroLog('Launch failed: ' + r.reason, 'error'); })
+              .catch(e => retroLog('Launch error: ' + e.message, 'error'));
+          }
+        });
+      }
+      break;
     case 'connect_qr': {
       const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`)
