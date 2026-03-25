@@ -592,6 +592,80 @@ function setupTournamentIPC() {
       return [];
     }
   });
+
+  // ── Distributed tournament: submit score ─────────────────────────────────
+  ipcMain.handle('tournament:submitScore', async (_, tId, playerId, scoreData) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.acceptScoreSubmission(playerId, scoreData);
+  });
+
+  // ── Distributed tournament: join an existing on-chain tournament ─────────
+  ipcMain.handle('tournament:joinDistributed', async (_, tournamentId, myPlayerId, myName) => {
+    if (!tournamentManager.chainStore) throw new Error('Chain store not configured');
+    const cells = await tournamentManager.chainStore.scanTournaments(tournamentId);
+    if (!cells.length) throw new Error('Tournament not found on chain: ' + tournamentId);
+    const cell = cells[0];
+
+    // Create a local tournament mirror from on-chain data
+    const t = await tournamentManager.create({
+      id:               cell.id,
+      gameId:           cell.gameId,
+      mode:             cell.modeId,
+      entryFee:         cell.entryFee,
+      players:          cell.maxPlayers,
+      timeLimitMinutes: cell.timeLimitMinutes,
+      currency:         cell.currency,
+      tournamentMode:   'distributed',
+      myPlayerId:       myPlayerId,
+    });
+    // Start polling chain for state changes
+    t.startDistributedPolling();
+    console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId}`);
+    return t.status();
+  });
+}
+
+// ── Distributed score relay HTTP server ────────────────────────────────────
+// Remote agents POST score submissions here. Organizer writes them on-chain.
+let _scoreRelayServer = null;
+function startScoreRelay(port = 8767) {
+  if (_scoreRelayServer) return;
+  const http = require('http');
+  _scoreRelayServer = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/score') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { tournamentId, playerId, scoreData } = JSON.parse(body);
+          tournamentManager.acceptScoreSubmission(tournamentId, playerId, scoreData);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: e.message }));
+        }
+      });
+    } else if (req.method === 'GET' && req.url.startsWith('/tournament/')) {
+      // Allow remote agents to query tournament state
+      const tId = req.url.split('/tournament/')[1];
+      const t = tournamentManager.get(tId);
+      if (t) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(t.status()));
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not found' }));
+      }
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  _scoreRelayServer.listen(port, '0.0.0.0', () => {
+    console.log(`[Main] Score relay server listening on :${port}`);
+  });
 }
 
 // ── Tournament → Renderer bridge (push events) ──────────────────────────────
@@ -770,6 +844,9 @@ app.whenReady().then(async () => {
 
   // Start RetroArch launch watcher (file-based IPC to avoid Electron SIGSEGV)
   _startRaWatcher();
+
+  // Start score relay for distributed tournaments
+  startScoreRelay(8767);
 
   // Create window
   createWindow();

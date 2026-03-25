@@ -175,31 +175,138 @@ EOF
   ok "Desktop entry created"
 fi
 
-# ── RetroArch check ────────────────────────────────────────
-header "Checking RetroArch..."
-if command -v retroarch &>/dev/null; then
-  ok "RetroArch found: $(command -v retroarch)"
-else
-  warn "RetroArch not found."
-  echo ""
-  echo "  FiberQuest can launch games locally when RetroArch is installed."
-  echo "  Install options:"
-  echo ""
-  echo "    Snap:    sudo snap install retroarch"
-  echo "    Apt:     sudo apt install retroarch"
-  echo "    Flatpak: flatpak install flathub org.libretro.RetroArch"
-  echo ""
+# ── RetroArch (flatpak) ─────────────────────────────────────
+header "Setting up RetroArch..."
 
-  if [[ $APPIMAGE_ONLY -eq 0 ]]; then
-    read -rp "  Install RetroArch via snap now? [y/N] " ans
-    if [[ "${ans,,}" == "y" ]]; then
-      if command -v snap &>/dev/null; then
-        info "Running: snap install retroarch"
-        snap install retroarch && ok "RetroArch installed via snap" || warn "snap install failed — install manually"
-      else
-        warn "snapd not available. Install RetroArch manually using one of the options above."
+# FiberQuest requires the flatpak version of RetroArch (1.22+).
+# The PPA/apt version (1.21 and below) segfaults when launched with -L from Electron.
+RA_INSTALLED=0
+if flatpak info org.libretro.RetroArch &>/dev/null 2>&1; then
+  ok "RetroArch (flatpak) already installed"
+  RA_INSTALLED=1
+else
+  info "FiberQuest requires RetroArch via Flatpak (avoids GPU conflicts with Electron)"
+
+  # Ensure flatpak is installed
+  if ! command -v flatpak &>/dev/null; then
+    info "Installing flatpak..."
+    if command -v apt-get &>/dev/null; then
+      sudo apt-get install -y flatpak && ok "flatpak installed" || { warn "flatpak install failed"; }
+    fi
+  fi
+
+  if command -v flatpak &>/dev/null; then
+    # Ensure flathub remote exists
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null
+
+    if [[ $APPIMAGE_ONLY -eq 0 ]]; then
+      read -rp "  Install RetroArch via flatpak now? [Y/n] " ans
+      if [[ "${ans,,}" != "n" ]]; then
+        info "Installing RetroArch (this may take a few minutes)..."
+        flatpak install -y flathub org.libretro.RetroArch && {
+          ok "RetroArch installed via flatpak"
+          RA_INSTALLED=1
+        } || warn "flatpak install failed — install manually: flatpak install flathub org.libretro.RetroArch"
       fi
     fi
+  else
+    warn "flatpak not available. Install RetroArch manually:"
+    echo "    flatpak install flathub org.libretro.RetroArch"
+  fi
+fi
+
+# ── RetroArch config for FiberQuest ─────────────────────────
+RA_CFG="$HOME/.var/app/org.libretro.RetroArch/config/retroarch/retroarch.cfg"
+if [[ -f "$RA_CFG" ]]; then
+  header "Configuring RetroArch for FiberQuest..."
+  # pause_nonactive: game must keep running when FiberQuest window has focus
+  # network_cmd_enable + port: UDP RAM polling for game state reading
+  PATCHED=0
+  patch_ra() {
+    local key="$1" val="$2"
+    if grep -q "^${key} " "$RA_CFG"; then
+      sed -i "s|^${key} .*|${key} = \"${val}\"|" "$RA_CFG"
+    else
+      echo "${key} = \"${val}\"" >> "$RA_CFG"
+    fi
+  }
+  patch_ra "pause_nonactive" "false"
+  patch_ra "network_cmd_enable" "true"
+  patch_ra "network_cmd_port" "55355"
+  ok "RetroArch config patched (pause_nonactive=false, network_cmd=true:55355)"
+elif [[ $RA_INSTALLED -eq 1 ]]; then
+  info "RetroArch config will be auto-configured on first game launch"
+fi
+
+# ── Install RetroArch cores ──────────────────────────────────
+if [[ $RA_INSTALLED -eq 1 ]]; then
+  header "Installing RetroArch cores..."
+  RA_CORES_DIR="$HOME/.var/app/org.libretro.RetroArch/config/retroarch/cores"
+  mkdir -p "$RA_CORES_DIR"
+
+  # Core list: name → libretro filename
+  declare -A CORES=(
+    ["snes9x"]="snes9x_libretro.so"               # SNES
+    ["fceumm"]="fceumm_libretro.so"                # NES
+    ["mgba"]="mgba_libretro.so"                    # GBA
+    ["genesis_plus_gx"]="genesis_plus_gx_libretro.so"  # Genesis/Mega Drive + Master System
+    ["fbneo"]="fbneo_libretro.so"                  # Arcade (FinalBurn Neo)
+  )
+
+  # Buildbot URL — x86_64 has aarch64 doesn't exist, armv7 works as fallback
+  case "$ARCH" in
+    x86_64)        BB_ARCH="x86_64" ;;
+    aarch64|arm64) BB_ARCH="armv7-neon-hf" ;;  # 32-bit compat works on arm64
+    *)             BB_ARCH="" ;;
+  esac
+  BB_BASE="https://buildbot.libretro.com/nightly/linux/${BB_ARCH}/latest"
+
+  CORES_INSTALLED=0
+  CORES_FAILED=0
+  for core_name in "${!CORES[@]}"; do
+    core_file="${CORES[$core_name]}"
+    if [[ -f "${RA_CORES_DIR}/${core_file}" ]]; then
+      ok "${core_name} already installed"
+      CORES_INSTALLED=$((CORES_INSTALLED + 1))
+      continue
+    fi
+
+    if [[ -n "$BB_ARCH" ]]; then
+      info "Downloading ${core_name}..."
+      TMP_ZIP="/tmp/fq_core_${core_name}.zip"
+      if curl -fsSL "${BB_BASE}/${core_file}.zip" -o "$TMP_ZIP" 2>/dev/null; then
+        unzip -qo "$TMP_ZIP" -d "$RA_CORES_DIR" 2>/dev/null && {
+          ok "${core_name} installed"
+          CORES_INSTALLED=$((CORES_INSTALLED + 1))
+        } || {
+          warn "${core_name} unzip failed"
+          CORES_FAILED=$((CORES_FAILED + 1))
+        }
+        rm -f "$TMP_ZIP"
+      else
+        warn "${core_name} download failed — install via RetroArch > Online Updater > Core Downloader"
+        CORES_FAILED=$((CORES_FAILED + 1))
+      fi
+    else
+      warn "Cannot auto-download cores for ${ARCH} — use RetroArch > Online Updater > Core Downloader"
+      break
+    fi
+  done
+
+  if [[ $CORES_INSTALLED -gt 0 ]]; then
+    ok "${CORES_INSTALLED} cores installed (SNES, NES, GBA, Genesis, Arcade)"
+  fi
+  if [[ $CORES_FAILED -gt 0 ]]; then
+    warn "${CORES_FAILED} cores failed — install via RetroArch > Online Updater > Core Downloader"
+  fi
+fi
+
+# ── Remove old apt/snap RetroArch (if present) ──────────────
+if dpkg -l retroarch 2>/dev/null | grep -q "^ii"; then
+  warn "Found old apt RetroArch — this version can crash with Electron"
+  read -rp "  Remove apt retroarch? (flatpak version is preferred) [Y/n] " ans
+  if [[ "${ans,,}" != "n" ]]; then
+    sudo apt remove -y retroarch && ok "Old retroarch removed" || warn "Could not remove — do it manually: sudo apt remove retroarch"
   fi
 fi
 

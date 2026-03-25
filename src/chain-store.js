@@ -104,7 +104,10 @@ class ChainStore {
       players:              tournament.players || [],  // [{name, paymentHash, paid}]
       prizePool:            tournament.prizePool || 0, // CKB
       winner:               tournament.winner || null,
-      createdAt:            tournament.createdAt || Date.now()
+      createdAt:            tournament.createdAt || Date.now(),
+      tournamentMode:       tournament.tournamentMode || 'local',
+      scoreSubmissions:     tournament.scoreSubmissions || null, // { playerId: { score, koCount, eventLogHash, submittedAt } }
+      winnerInvoice:        tournament.winnerInvoice || null,    // Fiber invoice for losers to pay winner
     }
     const json = Buffer.from(JSON.stringify(payload))
     return '0x' + Buffer.concat([MAGIC, Buffer.from([VERSION]), json]).toString('hex')
@@ -288,6 +291,24 @@ class ChainStore {
    */
   async completeTournament (outPoint, tournament) {
     return this.updateCell(outPoint, { ...tournament, state: STATE.COMPLETE })
+  }
+
+  /**
+   * Submit a player's score to the tournament cell (distributed mode).
+   * Reads the current cell, merges the score submission, writes back.
+   */
+  async submitScore (outPoint, tournament, playerId, scoreData) {
+    const submissions = tournament.scoreSubmissions || {}
+    submissions[playerId] = {
+      score:        scoreData.score,
+      koCount:      scoreData.koCount || 0,
+      eventLogHash: scoreData.eventLogHash || null,
+      submittedAt:  Date.now()
+    }
+    return this.updateCell(outPoint, {
+      ...tournament,
+      scoreSubmissions: submissions
+    })
   }
 
   /**

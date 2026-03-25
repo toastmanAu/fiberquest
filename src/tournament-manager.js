@@ -111,6 +111,11 @@ class Tournament extends EventEmitter {
     this.players   = {};     // { playerId: { name, invoice, paid, score, paymentHash } }
     this.scores    = {};     // { playerId: number }
     this.engine    = null;
+
+    // ── Distributed mode ──────────────────────────────────────────────────
+    this.tournamentMode   = opts.tournamentMode || 'local';  // 'local' | 'distributed'
+    this.myPlayerId       = opts.myPlayerId || null;          // which player THIS agent represents
+    this.scoreSubmissions = {};                                // { playerId: { score, koCount, eventLogHash, submittedAt } }
     this._timer    = null;
     this._startedAt = null;
     this.chainOutPoint = null;  // Set after escrow cell is written on-chain
@@ -184,6 +189,19 @@ class Tournament extends EventEmitter {
     };
     this.scores[playerId] = 0;
     this.state = 'WAITING_PLAYERS';
+
+    // Distributed mode: auto-populate local Fiber peer info for this player
+    if (this.tournamentMode === 'distributed' && playerId === this.myPlayerId && this.fiber) {
+      try {
+        const info = await this.fiber.getNodeInfo();
+        this.players[playerId].fiberPeerId = info.node_id || info.peer_id;
+        const addrs = info.addresses || info.listening_addresses || [];
+        this.players[playerId].fiberAddr = addrs[0] || null;
+        console.log(`[Tournament] Auto-set Fiber peer info for ${name}: ${this.players[playerId].fiberPeerId?.slice(0, 16)}...`);
+      } catch (e) {
+        console.warn(`[Tournament] Could not get Fiber node info: ${e.message}`);
+      }
+    }
 
     console.log(`[Tournament] Player ${name} registered at slot ${slotIndex} — awaiting address for L1 tx build`);
     this.emit('player_registered', { playerId, name, slotIndex, amount_ckb: this.entryFee });
@@ -413,6 +431,11 @@ class Tournament extends EventEmitter {
     this.state     = 'ACTIVE';
     this._startedAt = Date.now();
 
+    // Distributed: connect to all peers' Fiber nodes for settlement readiness
+    if (this.tournamentMode === 'distributed') {
+      await this.ensurePeerMesh().catch(e => console.warn('[Tournament] Peer mesh failed:', e.message));
+    }
+
     // Use the shared RAM engine from main.js if available (already polling),
     // otherwise start our own. The shared engine is preferred because it's
     // already connected and logging to the session file.
@@ -485,6 +508,10 @@ class Tournament extends EventEmitter {
 
   _onGameEvent(event, ramState) {
     if (this.state !== 'ACTIVE') return;
+
+    // Track events for distributed mode event log hash
+    if (!this._sessionEvents) this._sessionEvents = [];
+    this._sessionEvents.push({ id: event.id, t: Date.now() });
 
     // Update scores from current RAM state
     this._updateScores(ramState);
@@ -596,8 +623,199 @@ class Tournament extends EventEmitter {
 
   // ── Tournament end + payout ───────────────────────────────────────────────
 
+  // ── Fiber peer mesh ─────────────────────────────────────────────────────
+
+  /**
+   * Connect to all other players' Fiber nodes and verify reachability.
+   * Reads peer info from on-chain tournament cell or local player records.
+   * Call this before tournament starts to guarantee settlement paths exist.
+   */
+  async ensurePeerMesh() {
+    if (!this.fiber) return;
+    const myInfo = await this.fiber.getNodeInfo().catch(() => null);
+    if (!myInfo) { console.warn('[Tournament] Cannot get local Fiber node info'); return; }
+
+    const myPeerId = myInfo.node_id || myInfo.peer_id;
+    console.log(`[Tournament] My Fiber peer: ${myPeerId}`);
+
+    for (const [pid, p] of Object.entries(this.players)) {
+      if (pid === this.myPlayerId) continue; // skip self
+      if (!p.fiberPeerId || !p.fiberAddr) {
+        console.warn(`[Tournament] ${p.name} missing Fiber peer info — skipping`);
+        continue;
+      }
+      try {
+        await this.fiber.connectPeer(p.fiberPeerId, [p.fiberAddr]);
+        console.log(`[Tournament] ✅ Connected to ${p.name}'s Fiber node (${p.fiberPeerId.slice(0, 16)}...)`);
+      } catch (e) {
+        // Already connected is fine
+        if (e.message?.includes('already connected') || e.message?.includes('exists')) {
+          console.log(`[Tournament] Already connected to ${p.name}`);
+        } else {
+          console.warn(`[Tournament] ⚠️  Cannot connect to ${p.name}: ${e.message}`);
+        }
+      }
+    }
+
+    // Check existing channels — do we need to open any?
+    try {
+      const channels = await this.fiber.listChannels();
+      const channelPeers = new Set((channels || []).map(c => c.peer_id || c.remote_peer_id));
+      for (const [pid, p] of Object.entries(this.players)) {
+        if (pid === this.myPlayerId) continue;
+        if (p.fiberPeerId && channelPeers.has(p.fiberPeerId)) {
+          console.log(`[Tournament] Channel exists with ${p.name} ✅`);
+        } else if (p.fiberPeerId) {
+          console.log(`[Tournament] No channel with ${p.name} — will route via network or open on demand`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[Tournament] Channel check failed: ${e.message}`);
+    }
+  }
+
+  // ── Distributed tournament methods ──────────────────────────────────────
+
+  /**
+   * Submit this agent's local score data on-chain (distributed mode).
+   */
+  async _submitMyScore() {
+    if (!this.myPlayerId || !this._chainStore) return;
+    const crypto = require('crypto');
+    const score = this.scores[this.myPlayerId] || 0;
+    const koCount = this._koCount?.[this.myPlayerId] || 0;
+
+    // Hash the session's event log for verifiability
+    const sessionEvents = (this._sessionEvents || []).map(e => `${e.id}:${e.t}`).join('|');
+    const eventLogHash = '0x' + crypto.createHash('sha256').update(sessionEvents).digest('hex');
+
+    const scoreData = { score, koCount, eventLogHash };
+    this.scoreSubmissions[this.myPlayerId] = { ...scoreData, submittedAt: Date.now() };
+
+    // Find the tournament cell on-chain
+    const cells = await this._chainStore.scanTournaments(this.id);
+    if (cells.length === 0) {
+      console.warn('[Tournament] No on-chain cell found — score not submitted');
+      return;
+    }
+    const cell = cells[0];
+    try {
+      const result = await this._chainStore.submitScore(cell.outPoint, cell, this.myPlayerId, scoreData);
+      console.log(`[Tournament] ✅ Score submitted on-chain for ${this.myPlayerId}: score=${score} KOs=${koCount} tx=${result.txHash}`);
+      return result;
+    } catch (e) {
+      console.error(`[Tournament] ❌ Score submission failed: ${e.message}`);
+    }
+  }
+
+  /**
+   * Accept a remote agent's score submission (organizer only, distributed mode).
+   */
+  acceptScoreSubmission(playerId, scoreData) {
+    if (this.tournamentMode !== 'distributed') throw new Error('Not a distributed tournament');
+    if (!this.players[playerId]) throw new Error(`Unknown player: ${playerId}`);
+    this.scoreSubmissions[playerId] = {
+      score:        scoreData.score,
+      koCount:      scoreData.koCount || 0,
+      eventLogHash: scoreData.eventLogHash || null,
+      submittedAt:  Date.now(),
+    };
+    console.log(`[Tournament] Score received from ${playerId}: score=${scoreData.score} KOs=${scoreData.koCount}`);
+
+    // Check if all players have submitted
+    const allSubmitted = Object.keys(this.players).every(pid => this.scoreSubmissions[pid]);
+    if (allSubmitted) {
+      console.log('[Tournament] All scores submitted — resolving winner');
+      this._resolveDistributedWinner();
+    }
+  }
+
+  /**
+   * Deterministic winner resolution from on-chain score data.
+   * All agents running this on the same data MUST reach the same result.
+   */
+  _resolveDistributedWinner() {
+    const sorted = Object.entries(this.scoreSubmissions)
+      .map(([pid, s]) => ({ playerId: pid, score: s.score, koCount: s.koCount }))
+      .sort((a, b) => b.score - a.score || a.playerId.localeCompare(b.playerId)); // deterministic tiebreak
+
+    const winner = sorted[0];
+    console.log(`[Tournament] Distributed winner: ${winner.playerId} (score=${winner.score})`);
+    this._endTournament('distributed_consensus', winner.playerId);
+  }
+
+  /**
+   * Poll chain for score submissions from other agents (non-organizer distributed mode).
+   */
+  startDistributedPolling(intervalMs = 10000) {
+    if (this._distributedPollInterval) return;
+    this._distributedPollInterval = setInterval(async () => {
+      if (this.state === 'COMPLETE' || this.state === 'PAYING') {
+        clearInterval(this._distributedPollInterval);
+        return;
+      }
+      try {
+        const cells = await this._chainStore?.scanTournaments(this.id);
+        if (!cells?.length) return;
+        const cell = cells[0];
+        if (cell.scoreSubmissions) {
+          // Merge any new submissions we haven't seen
+          for (const [pid, sub] of Object.entries(cell.scoreSubmissions)) {
+            if (!this.scoreSubmissions[pid]) {
+              this.scoreSubmissions[pid] = sub;
+              console.log(`[Tournament] Chain poll: found score for ${pid} — score=${sub.score}`);
+            }
+          }
+          // Check if all submitted
+          const allSubmitted = Object.keys(this.players).every(pid => this.scoreSubmissions[pid]);
+          if (allSubmitted && this.state === 'SETTLING') {
+            clearInterval(this._distributedPollInterval);
+            console.log('[Tournament] All scores found on-chain — resolving winner');
+            this._resolveDistributedWinner();
+          }
+        }
+        // Detect state changes from organizer
+        if (cell.state === 'ACTIVE' && this.state === 'WAITING_PLAYERS') {
+          console.log('[Tournament] Chain: tournament is ACTIVE — starting local engine');
+          this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
+        }
+      } catch (e) {
+        // Non-fatal — will retry next interval
+      }
+    }, intervalMs);
+  }
+
   async _endTournament(reason, forcedWinner = null) {
-    if (this.state !== 'ACTIVE') return;
+    if (this.state !== 'ACTIVE' && reason !== 'distributed_consensus') return;
+    if (this.state !== 'ACTIVE' && this.state !== 'SETTLING') return;
+
+    // ── Distributed mode: submit score and wait for others ──────────────
+    if (this.tournamentMode === 'distributed' && reason !== 'distributed_consensus') {
+      this.state = 'SETTLING';
+      clearTimeout(this._timer);
+      if (this.engine) this.engine.stop();
+      console.log(`[Tournament] Distributed mode — submitting local score, waiting for others`);
+      await this._submitMyScore();
+      this.startDistributedPolling();
+      this.emit('settling', { reason, tournamentId: this.id, message: 'Waiting for all agents to submit scores' });
+
+      // Timeout: if not all scores after 2× settlement buffer, resolve with what we have
+      setTimeout(() => {
+        if (this.state === 'SETTLING') {
+          console.log('[Tournament] Settlement timeout — resolving with available scores');
+          // Score 0 for anyone who didn't submit
+          for (const pid of Object.keys(this.players)) {
+            if (!this.scoreSubmissions[pid]) {
+              this.scoreSubmissions[pid] = { score: 0, koCount: 0, submittedAt: null };
+              console.log(`[Tournament] ${pid} forfeited (no score submitted)`);
+            }
+          }
+          this._resolveDistributedWinner();
+        }
+      }, this.settlementBufferMs * 2);
+      return;
+    }
+
     this.state = 'SCORING';
 
     clearTimeout(this._timer);
@@ -662,6 +880,75 @@ class Tournament extends EventEmitter {
     this.state = 'PAYING';
     const playerId = winner.playerId || Object.keys(this.players)[0];
     const player   = this.players[playerId];
+
+    // ── Distributed mode: losers pay winner via Fiber channels ───────────
+    if (this.tournamentMode === 'distributed' && !isDraw) {
+      const loserCount = Object.keys(this.players).length - 1;
+      const perLoserCkb = this.entryFee; // each loser pays their entry fee to winner
+
+      if (this.myPlayerId === playerId) {
+        // I won — generate invoice for total winnings, publish to chain
+        console.log(`[Tournament] I won! Generating invoice for ${perLoserCkb * loserCount} CKB from ${loserCount} losers`);
+        if (this.fiber) {
+          try {
+            const totalShannon = BigInt(Math.round(perLoserCkb * loserCount * 1e8));
+            const inv = await this.fiber.newInvoice(totalShannon, `FQ win: ${this.id}`, { currency: this.currency });
+            const winnerInvoice = inv?.invoice_address;
+            console.log(`[Tournament] Winner invoice: ${winnerInvoice?.slice(0, 40)}...`);
+
+            // Write invoice to chain so losers can read it
+            if (this._chainStore) {
+              const cells = await this._chainStore.scanTournaments(this.id).catch(() => []);
+              if (cells.length > 0) {
+                await this._chainStore.updateCell(cells[0].outPoint, {
+                  ...cells[0], state: 'COMPLETE', winner: playerId, winnerInvoice
+                }).catch(e => console.warn('[Tournament] Chain invoice write failed:', e.message));
+              }
+            }
+            this.emit('winner_invoice', { invoice: winnerInvoice, amount_ckb: perLoserCkb * loserCount });
+          } catch (e) {
+            console.warn(`[Tournament] Invoice generation failed: ${e.message}`);
+          }
+        }
+      } else {
+        // I lost — read winner's invoice from chain and pay via Fiber
+        console.log(`[Tournament] I lost — looking for winner's invoice to pay ${perLoserCkb} CKB`);
+        let winnerInvoice = null;
+
+        // Poll chain for winner's invoice (they may not have written it yet)
+        const maxWaitMs = 60000;
+        const pollMs = 5000;
+        const start = Date.now();
+        while (!winnerInvoice && Date.now() - start < maxWaitMs) {
+          try {
+            const cells = await this._chainStore?.scanTournaments(this.id);
+            if (cells?.[0]?.winnerInvoice) {
+              winnerInvoice = cells[0].winnerInvoice;
+            }
+          } catch (_) {}
+          if (!winnerInvoice) await new Promise(r => setTimeout(r, pollMs));
+        }
+
+        if (winnerInvoice && this.fiber) {
+          try {
+            const result = await this.fiber.sendPayment(winnerInvoice);
+            console.log(`[Tournament] ✅ Fiber payout sent to winner: ${result?.payment_hash || 'ok'}`);
+            this.emit('payout_sent', { playerId, name: player?.name, amount_ckb: perLoserCkb, result });
+            board.find(b => b.playerId === this.myPlayerId && (b.payout = -perLoserCkb));
+          } catch (e) {
+            console.error(`[Tournament] ❌ Fiber payout to winner failed: ${e.message}`);
+            this.emit('payout_needed', { playerId, name: player?.name, amount_ckb: perLoserCkb, error: e.message });
+          }
+        } else {
+          console.warn(`[Tournament] Could not find winner's invoice — manual payout needed`);
+          this.emit('payout_needed', { playerId, name: player?.name, amount_ckb: perLoserCkb, error: 'Winner invoice not found' });
+        }
+      }
+      // Skip the local payout flow below — distributed settlement is complete
+      this.state = 'COMPLETE';
+      this.emit('complete', { tournamentId: this.id, winner: { playerId, name: player?.name, score: winner.score }, board, payouts: [], totalPot, isDraw });
+      return;
+    }
 
     // Payout structure
     const mode = this.mode;
@@ -795,6 +1082,8 @@ class Tournament extends EventEmitter {
                             })),
       winner:               this.winner || null,
       createdAt:            this.createdAt,
+      tournamentMode:       this.tournamentMode,
+      scoreSubmissions:     Object.keys(this.scoreSubmissions).length > 0 ? this.scoreSubmissions : null,
     };
   }
 
@@ -1009,6 +1298,11 @@ class TournamentManager extends EventEmitter {
   }
 
   get(id) { return this.tournaments.get(id); }
+  acceptScoreSubmission(tournamentId, playerId, scoreData) {
+    const t = this.tournaments.get(tournamentId);
+    if (!t) throw new Error(`Tournament not found: ${tournamentId}`);
+    return t.acceptScoreSubmission(playerId, scoreData);
+  }
   getActive() {
     for (const t of this.tournaments.values()) {
       if (t.state === 'ACTIVE' || t.state === 'WAITING_PLAYERS') return t;
