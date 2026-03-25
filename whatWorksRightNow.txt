@@ -1,0 +1,25 @@
+currently as at time of submission.
+
+installer should install all necessary prerequisites, should skip over stuff already installed. 
+Retroarch included. 
+Note on Retroarch, the ubuntu apt retroarch is kinda broken and doesnt work with fiberquest, 
+i spent days trying to make it work but that version cannot be reliably (if at all) when called from within an electron application. 
+the flatpak version via flathub however works perfectly. that is the version required for fiberquest.
+
+fiberquest requires ram address mappings of target games to work, tournament config files are needed for games to instruct
+the fiber quest agent how to set them up on chain and for what the udp poller 
+needs to look for.
+
+currently mapped - poc only (i'll map a bunch of games over the next week after i fix the remote system later tonight hopefully)
+
+local mode - two players on the same machine, two controllers
+Mortal Kombat - SNES - 2player single battle mode, best of three rounds
+ 
+remote mode - 1 player per machine, remotely interacting with other fiberquest installs
+Donkey Kong - SNES - 10 minute highscore battle. lives and bananas form a cumalative score, highest score after 10 minutes wins.
+
+the remote mode isnt full functional. you can create and join a tournament but adjudication is still veing fixed and payout logic is still broke. 
+
+how payouts work
+local multiplayer - native L1 payments. signed by joyid wallet, constructed locally and broadcast through an integrated light client in fiberquest.
+remote multiplayer - native L1 ramping with implicit fiber channeling between agents. user deposits to the fiberquest agent via joyId wallet. score logic is determined by fiberquest and submitted on chain. the organising agent for any particular tournament updates the central cell and the other competitors agents poll and act accordingly, submitting data where appropriate. what will happen once fixed is the agents then at completion of the tournament, route funds via fiber to the appropriate winning agents machine where that agent automates a payout to the users joyId wallet.
