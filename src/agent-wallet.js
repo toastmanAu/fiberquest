@@ -343,8 +343,9 @@ class AgentWallet {
     let collected = 0n
 
     for (const cell of liveCells) {
-      // Skip cells that have output data (tournament cells — don't accidentally consume them)
+      // Skip cells that have output data or type scripts (tournament escrow cells)
       if (cell.outputData && cell.outputData !== '0x') continue
+      if (cell.output.type) continue
       inputs.push({
         previousOutput: { txHash: cell.outPoint.txHash, index: cell.outPoint.index },
         since: '0x0'
@@ -456,7 +457,10 @@ class AgentWallet {
 
     // Gather player inputs
     const playerCells = await this.getCellsForLock(playerLock, 50)
-    const plainCells  = playerCells.filter(c => !c.outputData || c.outputData === '0x')
+    const plainCells  = playerCells.filter(c =>
+      (!c.outputData || c.outputData === '0x') &&
+      (!c.output.type)  // Skip cells with type scripts (e.g. old tournament escrow cells)
+    )
     const inputs = []
     let   collected = 0n
     for (const cell of plainCells) {
