@@ -3,9 +3,8 @@
   "name": "Sonic the Hedgehog (Master System)",
   "system": "mastersystem",
   "rom_name": "Sonic the Hedgehog (USA, Europe).sms",
-  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "8-bit Sonic on SMS. Score attack or fastest zone clear.",
-
   "ram_addresses": {
     "score": {
       "address": "0xD2BA",
@@ -38,7 +37,6 @@
       "notes": "Timer milliseconds"
     }
   },
-
   "tournament_modes": [
     {
       "id": "highest_score",
@@ -66,7 +64,6 @@
       "time_limit_minutes": 20
     }
   ],
-
   "notes": [
     "RAM map sourced from TCRF (The Cutting Room Floor) — highly reliable",
     "Score is 4 bytes big-endian at 0xD2BA",

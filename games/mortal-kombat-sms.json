@@ -3,9 +3,8 @@
   "name": "Mortal Kombat (Master System)",
   "system": "mastersystem",
   "rom_name": "Mortal Kombat (Europe, Brazil).sms",
-  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "SMS port of MK. Surprisingly solid. HP tracking same concept as SNES version.",
-
   "ram_addresses": {
     "p1_health": {
       "address": "0xC488",
@@ -23,18 +22,19 @@
       "notes": "Round timer. Source: libretro cheat3 (00C4-3609)"
     }
   },
-
   "tournament_modes": [
     {
       "id": "first_to_two",
       "name": "Best of 3 Rounds",
       "description": "First player to win 2 rounds wins.",
-      "tracked_fields": ["p1_health", "p2_health"],
+      "tracked_fields": [
+        "p1_health",
+        "p2_health"
+      ],
       "win_condition": "opponent_at_zero",
       "time_limit_minutes": 10
     }
   ],
-
   "notes": [
     "SMS Action Replay format: 00C4-88XX = address 0xC488, value 0xXX",
     "Blood code: At title screen: Up, Up, Down, Down, Left, Right, Left, Right",

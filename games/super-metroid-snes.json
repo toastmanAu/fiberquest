@@ -2,10 +2,10 @@
   "id": "super-metroid-snes",
   "title": "Super Metroid",
   "platform": "snes",
-  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Super Metroid (Japan, USA).7z",
   "tournament_format": "speedrun",
-  "description": "Speedrun race \u2014 fastest completion of a defined route wins. Track energy as health indicator.",
+  "description": "Speedrun race — fastest completion of a defined route wins. Track energy as health indicator.",
   "ram_addresses": {
     "p1_energy": {
       "address": "0x09C2",
@@ -40,16 +40,18 @@
       "size": 2,
       "type": "uint16_le",
       "encoding": "hex",
-      "notes": "Current room pointer \u2014 use to detect Zebes escape / Mother Brain room for finish line."
+      "notes": "Current room pointer — use to detect Zebes escape / Mother Brain room for finish line."
     }
   },
   "win_condition": "fastest_completion",
   "tournament_rules": "Any% speedrun race. First to trigger credits (escape sequence completes) wins. Same starting save state. RTA timing from game start to escape timer expiry.",
   "confidence": "medium",
-  "notes": "SNES AR codes are 7Exxxxxx format \u2014 strip 7E prefix for WRAM address. 0x09C2 = $7E09C2. Verify room_id format for finish detection.",
+  "notes": "SNES AR codes are 7Exxxxxx format — strip 7E prefix for WRAM address. 0x09C2 = $7E09C2. Verify room_id format for finish detection.",
   "sources": [
     "libretro-database/cht SNES AR: 7E09C2 energy, 7E09D6 reserve, 7E09C4 tanks",
     "TCRF Super Metroid RAM map"
   ],
-  "rom_name": "Super Metroid (Japan, USA).sfc"
+  "rom_name": "Super Metroid (Japan, USA).sfc",
+  "name": "Super Metroid",
+  "system": "snes"
 }

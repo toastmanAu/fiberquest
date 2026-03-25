@@ -3,9 +3,8 @@
   "name": "Pac-Man",
   "system": "arcade",
   "rom_name": "puckman.zip",
-  "core": "/home/phill/.config/retroarch/cores/fbneo_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/fbneo_libretro.so",
   "description": "The original arcade score attack. Everyone knows it. Pure skill — highest score wins.",
-
   "ram_addresses": {
     "score_p1": {
       "address": "0x4E80",
@@ -28,7 +27,6 @@
       "confidence": "medium"
     }
   },
-
   "tournament_modes": [
     {
       "id": "highest_score",
@@ -39,7 +37,6 @@
       "time_limit_minutes": 10
     }
   ],
-
   "notes": [
     "⚠️ RAM addresses need verification — Pac-Man arcade RAM map varies by ROM version",
     "ROM: puckman.zip (Japanese original) or pacman.zip (US version) — addresses may differ",

@@ -3,9 +3,8 @@
   "name": "Tetris",
   "system": "nes",
   "rom_name": "Tetris (USA).nes",
-  "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/fceumm_libretro.so",
   "description": "The universal classic. Highest score or most lines cleared wins. No explanation needed.",
-
   "ram_addresses": {
     "score_lo": {
       "address": "0x0073",
@@ -48,13 +47,15 @@
       "notes": "Next piece type (0-6)"
     }
   },
-
   "score_format": {
     "type": "bcd_multi",
-    "addresses": ["score_hi", "score_mid", "score_lo"],
+    "addresses": [
+      "score_hi",
+      "score_mid",
+      "score_lo"
+    ],
     "notes": "3 BCD bytes = 6 decimal digits. Max score: 999999"
   },
-
   "tournament_modes": [
     {
       "id": "highest_score",
@@ -86,7 +87,6 @@
       "time_limit_minutes": 10
     }
   ],
-
   "notes": [
     "Score stored as 3-byte BCD — decode: hi*10000 + mid*100 + lo (each byte = 2 BCD digits)",
     "Universally known — zero learning curve for players",

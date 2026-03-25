@@ -3,9 +3,8 @@
   "name": "Streets of Rage 2",
   "system": "megadrive",
   "rom_name": "Streets of Rage 2 (USA).md",
-  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "Beat-em-up classic. Players fight through stages; highest score or most KOs wins the tournament.",
-
   "ram_addresses": {
     "p1_lives": {
       "address": "0xFFEF83",
@@ -69,13 +68,15 @@
       "notes": "Current stage/level"
     }
   },
-
   "score_format": {
     "type": "bcd_multi",
-    "addresses": ["p1_score_hi", "p1_score_mid", "p1_score_lo"],
+    "addresses": [
+      "p1_score_hi",
+      "p1_score_mid",
+      "p1_score_lo"
+    ],
     "notes": "Combine 3 BCD bytes: hi*10000 + mid*100 + lo (each byte is 2 BCD digits)"
   },
-
   "tournament_modes": [
     {
       "id": "highest_score",
@@ -103,7 +104,6 @@
       "time_limit_minutes": 10
     }
   ],
-
   "notes": [
     "Score is stored in BCD (Binary-Coded Decimal) format — each byte represents 2 decimal digits",
     "P1 player data block starts at 0xFFEF00, P2 at 0xFFF000",

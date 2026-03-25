@@ -3,9 +3,8 @@
   "name": "Mario Kart 64",
   "system": "n64",
   "rom_name": "Mario Kart 64 (USA).z64",
-  "core": "/home/phill/.config/retroarch/cores/mupen64plus_next_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/mupen64plus_next_libretro.so",
   "description": "The definitive party racing game. Race mode or balloon battle — everyone knows this one.",
-
   "ram_addresses": {
     "p1_laps": {
       "address": "0x164390",
@@ -48,13 +47,17 @@
       "notes": "P4 balloons. Source: libretro cheat24"
     }
   },
-
   "tournament_modes": [
     {
       "id": "balloon_battle",
       "name": "Balloon Battle",
       "description": "Last player with balloons wins. Start with 3 balloons each — lose all = eliminated.",
-      "tracked_fields": ["p1_balloons", "p2_balloons", "p3_balloons", "p4_balloons"],
+      "tracked_fields": [
+        "p1_balloons",
+        "p2_balloons",
+        "p3_balloons",
+        "p4_balloons"
+      ],
       "win_condition": "last_standing",
       "time_limit_minutes": 5,
       "recommended_settings": {
@@ -67,7 +70,12 @@
       "id": "race",
       "name": "Grand Prix Race",
       "description": "First to complete all laps wins. Track lap completion via lap address.",
-      "tracked_fields": ["p1_laps", "p2_laps", "p3_laps", "p4_laps"],
+      "tracked_fields": [
+        "p1_laps",
+        "p2_laps",
+        "p3_laps",
+        "p4_laps"
+      ],
       "win_condition": "first_to_finish",
       "time_limit_minutes": 8,
       "recommended_settings": {
@@ -77,7 +85,6 @@
       }
     }
   ],
-
   "notes": [
     "N64 GameShark codes use format 8XXXXXXX YYYY — address is 0xXXXXXX, value is 0xYYYY",
     "Balloon battle is the best tournament format — fast, chaotic, unambiguous winner",

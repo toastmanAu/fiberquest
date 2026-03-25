@@ -2,10 +2,10 @@
   "id": "donkey-kong-country-snes",
   "title": "Donkey Kong Country",
   "platform": "snes",
-  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Donkey Kong Country (USA) (Rev 2).zip",
   "tournament_format": "race",
-  "description": "Level race \u2014 first to complete a set of levels wins. Track lives as tiebreaker.",
+  "description": "Level race — first to complete a set of levels wins. Track lives as tiebreaker.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0xA863",
@@ -30,11 +30,13 @@
     }
   },
   "win_condition": "race_completion",
-  "tournament_rules": "Race format \u2014 first player to complete World 1 (5 levels + boss) wins. Simultaneous start on separate machines or split-screen if supported. Lives count as tiebreaker if tied.",
+  "tournament_rules": "Race format — first player to complete World 1 (5 levels + boss) wins. Simultaneous start on separate machines or split-screen if supported. Lives count as tiebreaker if tied.",
   "confidence": "medium",
-  "notes": "AR codes use bank addressing (BF prefix = bank $BF). Actual WRAM addresses need live verification \u2014 subtract $7E0000 offset. Verify 0xA863 is correct WRAM lives location.",
+  "notes": "AR codes use bank addressing (BF prefix = bank $BF). Actual WRAM addresses need live verification — subtract $7E0000 offset. Verify 0xA863 is correct WRAM lives location.",
   "sources": [
     "libretro-database/cht SNES AR: B6A863 lives, BF8FA4 kong status"
   ],
-  "rom_name": "Donkey Kong Country (USA).sfc"
+  "rom_name": "Donkey Kong Country.zip",
+  "name": "Donkey Kong Country",
+  "system": "snes"
 }

@@ -1,7 +1,7 @@
 {
   "id": "super-mario-bros",
   "name": "Super Mario Bros.",
-  "core": "/home/phill/.config/retroarch/cores/fceumm_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/fceumm_libretro.so",
   "notes": "NES. RAM addresses well-documented. Lives at 0x075A, world at 0x075F, level at 0x0760, coins at 0x075E, score bytes at 0x07DD-0x07E2 (BCD, 6 digits).",
   "addresses": {
     "lives": {
@@ -125,7 +125,7 @@
       {
         "id": "time_limit",
         "label": "Highest Score",
-        "description": "Play for a set duration \u2014 highest score wins",
+        "description": "Play for a set duration — highest score wins",
         "metric": "score",
         "requires": [
           "duration_seconds"
@@ -135,7 +135,7 @@
       {
         "id": "time_limit_levels",
         "label": "Most Levels Cleared",
-        "description": "Play for a set duration \u2014 most levels cleared wins",
+        "description": "Play for a set duration — most levels cleared wins",
         "metric": "levels_cleared",
         "requires": [
           "duration_seconds"

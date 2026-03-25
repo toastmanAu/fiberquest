@@ -2,10 +2,10 @@
   "id": "golden-axe-md",
   "title": "Golden Axe",
   "platform": "megadrive",
-  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/genesis_plus_gx_libretro.so",
   "rom": "~/roms/megadrive/Golden Axe (World) (v1.1).zip",
   "tournament_format": "survival",
-  "description": "Co-op beat-em-up \u2014 track lives and score. Highest combined score at end of game wins.",
+  "description": "Co-op beat-em-up — track lives and score. Highest combined score at end of game wins.",
   "ram_addresses": {
     "p1_lives": {
       "address": "0xFFFE7C",
@@ -58,10 +58,12 @@
     }
   },
   "win_condition": "last_lives_standing",
-  "tournament_rules": "Arcade survival mode \u2014 2 players, track who survives furthest. Tiebreaker: most lives remaining at same death point. Duel mode also viable for 1v1.",
+  "tournament_rules": "Arcade survival mode — 2 players, track who survives furthest. Tiebreaker: most lives remaining at same death point. Duel mode also viable for 1v1.",
   "confidence": "high",
   "sources": [
     "libretro-database/cht MD AR: FFFE7C P1 lives, FFFE7E P1 health, FFFE8C P2 lives, FFFE8E P2 health"
   ],
-  "rom_name": "Golden Axe (USA, Europe).md"
+  "rom_name": "Golden Axe (USA, Europe).md",
+  "name": "Golden Axe",
+  "system": "megadrive"
 }

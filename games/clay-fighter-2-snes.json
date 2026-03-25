@@ -2,10 +2,10 @@
   "id": "clay-fighter-2-snes",
   "title": "ClayFighter 2: Judgment Clay",
   "platform": "snes",
-  "core": "/home/phill/.config/retroarch/cores/snes9x_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/snes9x_libretro.so",
   "rom": "~/roms/snes/Clay Fighter 2 - Judgment Clay (USA).sfc",
   "tournament_format": "versus",
-  "description": "1v1 fighter \u2014 best of 3 rounds. Track HP to determine round winner.",
+  "description": "1v1 fighter — best of 3 rounds. Track HP to determine round winner.",
   "ram_addresses": {
     "p1_health": {
       "address": "0x1828",
@@ -35,5 +35,7 @@
   "sources": [
     "libretro-database/cht SNES AR: 7E1828 P1 HP, 7E1B14 P2 HP, 7E0FC6 timer"
   ],
-  "rom_name": "Clay Fighter 2 - Judgement Clay (USA).sfc"
+  "rom_name": "Clay Fighter 2 - Judgement Clay (USA).sfc",
+  "name": "ClayFighter 2: Judgment Clay",
+  "system": "snes"
 }

@@ -3,9 +3,8 @@
   "name": "Alex Kidd in Miracle World",
   "system": "mastersystem",
   "rom_name": "Alex Kidd in Miracle World (USA, Europe, Brazil) (Rev 1).sms",
-  "core": "/home/phill/.config/retroarch/cores/genesis_plus_gx_libretro.so",
+  "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/genesis_plus_gx_libretro.so",
   "description": "Classic SMS platformer built into the console BIOS. Money/score and lives tracking.",
-
   "ram_addresses": {
     "lives": {
       "address": "0xC02F9",
@@ -26,7 +25,6 @@
       "confidence": "medium"
     }
   },
-
   "tournament_modes": [
     {
       "id": "highest_score",
@@ -45,7 +43,6 @@
       "time_limit_minutes": 20
     }
   ],
-
   "notes": [
     "⚠️ RAM addresses need live verification with RetroArch memory viewer",
     "Game Genie codes use different address encoding — 0xC02F9 is decoded estimate",
