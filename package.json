@@ -8,7 +8,7 @@
   },
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "bash scripts/start.sh",
     "dev": "NODE_ENV=development electron .",
     "server": "node src/game-server.js",
     "test:rpc": "node scripts/test-rpc.js",
