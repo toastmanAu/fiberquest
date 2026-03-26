@@ -902,6 +902,18 @@ class Tournament extends EventEmitter {
         const cells = await this._chainStore?.scanTournaments(this.id);
         if (!cells?.length) return;
         const cell = cells[0];
+
+        // Sync player list from chain — ensures non-organiser sees all players
+        if (Array.isArray(cell.players)) {
+          for (const cp of cell.players) {
+            const pid = cp.id || cp.playerId || cp.name;
+            if (pid && !this.players[pid]) {
+              this.players[pid] = { name: cp.name || pid, paid: cp.paid ?? true, slotIndex: cp.slotIndex };
+              console.log(`[Tournament] Chain: discovered player ${pid} (${cp.name || pid})`);
+            }
+          }
+        }
+
         // Scan for per-agent score cells (not the tournament cell's scoreSubmissions)
         if (this.state === 'SETTLING') {
           const wallet = this._wallet || this._chainStore?.wallet;
