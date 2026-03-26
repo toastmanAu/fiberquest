@@ -1255,8 +1255,13 @@ class Tournament extends EventEmitter {
         }
 
         // ── TM: Scan for intent cells and batch-register new players ────
-        if ((this.state === 'CREATED' || this.state === 'WAITING_PLAYERS' || cell.state === 'OPEN') &&
-            this._isOrganiser && this._chainStore) {
+        const shouldScanIntents = (this.state === 'CREATED' || this.state === 'WAITING_PLAYERS' || cell.state === 'OPEN') &&
+            this._isOrganiser && this._chainStore;
+        if (!shouldScanIntents && header.number % 10 === 0) {
+          // Log every 10 blocks why we're not scanning (debug)
+          console.log(`[Tournament] Block ${header.number}: skip intent scan (state=${this.state}, cellState=${cell.state}, isOrg=${this._isOrganiser}, hasCS=${!!this._chainStore})`);
+        }
+        if (shouldScanIntents) {
           const cutoff = cell.entryCutoffBlock || this.entryCutoffBlock;
           const registered = cell.registeredPlayers || Object.keys(this.players).length;
           const required = cell.playerCount || this.playerCount || this.maxPlayers || 2;
