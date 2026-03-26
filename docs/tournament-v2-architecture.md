@@ -127,14 +127,20 @@
 
 ### Phase 5: Payout
 
-1. **TM sends accumulated entry fees to winner via Fiber**
-   - TM has entry fee CKB on its side of each channel
-   - Sends total pot to winner's Fiber node (routed or direct)
-2. **All channels close cooperatively**
-   - Winner: receives entry fees from all losers via Fiber
-   - Losers: channel closes with their balance (entry fee was sent to TM side)
-   - TM: channel closes clean, no funds retained
-3. **TC rewritten to COMPLETE** with winner + final scores
+1. **All agents independently calculate winner** (deterministic, same chain scores)
+2. **Each losing agent voluntarily sends entry fee to TM via Fiber** (~20ms per hop)
+   - Agent code attestation ensures approved agents always honour results
+3. **TM forwards accumulated pot to winner via Fiber** (~20ms)
+   - Total payout time: **under 1 second**
+   - TM acts as hub router — CKB flows through, never held
+4. **All channels close cooperatively** — standard Fiber close
+5. **TC rewritten to COMPLETE** with winner + final scores
+
+### Scaling Path
+- **Current:** CKB L1 testnet — free, sufficient throughput for tournament frequency
+- **Future:** If FiberQuest grows, migrate to L2 appchain with sub-second blocks
+  and near-zero fees. Cell model + tournament logic translates directly.
+  Mainnet pathway is likely its own appchain, not raw L1.
 
 ### Dispute / Non-cooperation
 
@@ -252,7 +258,7 @@ b) **TM closes losing channels first (L1)**: Close loser channels → CKB return
 c) **Pre-funded TM**: TM maintains a Fiber float. TM pays winner from its own balance immediately, then recoups from closing loser channels later. Requires TM to have liquidity.
 d) **Dual-funded channels**: Both TM and PA fund the channel. TM pre-loads its side with enough to cover potential payout. Complex.
 
-**Recommended: Option C (pre-funded TM)** — TM needs a Fiber float >= max_payout. For a 4-player × 100 CKB tournament, TM needs 400 CKB in Fiber liquidity. TM pays winner immediately, then recoups by closing loser channels. This is the Lightning Network "hub" model.
+**Resolved: Hub routing via voluntary send.** Since all agents run deterministic code and the outcome is verifiable on-chain, losing agents voluntarily send their entry fee to TM via Fiber (~20ms), and TM forwards to winner (~20ms). Total payout: <1 second. TM is a router, not a holder — CKB flows through, not to. No pre-funded float needed. Modified agents that refuse to send are prevented by code attestation at registration. TM maintains a modest operational float (~400 CKB) for cell operations only.
 
 ### Issue 5: What If PA Doesn't Open Channel After Registration?
 TM registered them on TC but they never funded the channel. Tournament can't start with unfunded players.
