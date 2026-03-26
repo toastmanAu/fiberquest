@@ -1225,31 +1225,17 @@ class Tournament extends EventEmitter {
             }
           }
 
-          // ── PA: detect own registration and auto-open Fiber channel ────
-          if (!this._isOrganiser && !this._channelOpened && this._wallet) {
+          // ── PA: detect own registration on TC ────
+          if (!this._isOrganiser && !this._registrationConfirmed && this._wallet) {
             const myAddr = this._wallet.address;
             const registered = (cell.players || []).find(p => p.address === myAddr);
             if (registered) {
-              this._channelOpened = true;
-              console.log(`[Tournament] I've been registered on TC! Opening Fiber channel to TM...`);
+              this._registrationConfirmed = true;
+              console.log(`[Tournament] ✅ I've been registered on TC by organiser`);
               this.emit('player_registered_self', { address: myAddr });
-
-              // Auto-open channel + pay entry fee
-              const tmPeerId = cell.fiberPeerId;
-              const tmAddr = cell.fiberAddress;
-              if (tmPeerId && this.fiber) {
-                this.openChannelAndPay(tmPeerId, tmAddr)
-                  .then(() => {
-                    console.log(`[Tournament] ✅ Fiber channel open + entry fee sent`);
-                    this.emit('channel_funded', { playerId: this.myPlayerId });
-                  })
-                  .catch(e => {
-                    console.warn(`[Tournament] Channel open failed: ${e.message}`);
-                    this.emit('error', { message: `Channel open failed: ${e.message}` });
-                  });
-              } else {
-                console.log(`[Tournament] TM has no Fiber peer ID — channel open skipped`);
-              }
+              // Entry fee already paid via JoyID L1 deposit to agent wallet.
+              // Fiber channel escrow is Phase 2 — for now, L1 payment = entry confirmed.
+              this.emit('channel_funded', { playerId: this.myPlayerId });
             }
           }
         }
