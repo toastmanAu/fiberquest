@@ -783,6 +783,46 @@ class AgentWallet {
     console.log(`[AgentWallet] L1 batch payment sent: ${summary} — tx: ${txHash}`)
     return txHash
   }
+  // ── Intent cell convenience methods ──────────────────────────────────────
+
+  /**
+   * Consume a cell owned by this wallet (e.g., an intent cell after registration).
+   * CKB returns to wallet as change. No new output — just reclaim capacity.
+   */
+  async consumeOwnCell (outPoint) {
+    const cellInput = {
+      previousOutput: { txHash: outPoint.txHash, index: outPoint.index },
+      since: '0x0'
+    }
+    const signedTx = await this.buildAndSignTx({
+      outputs: [],
+      outputsData: [],
+      extraInputs: [cellInput]
+    })
+    const txHash = await this.sendRawTx(signedTx)
+    console.log(`[AgentWallet] Consumed own cell: ${outPoint.txHash}:${outPoint.index} → ${txHash}`)
+    return txHash
+  }
+
+  /**
+   * Get wallet info for the wallet UI page.
+   * Returns { address, balance, cellCount }
+   */
+  async getWalletInfo () {
+    const cells = await this.getLiveCells(200)
+    const freeCells = cells.filter(c => !c.outputData || c.outputData === '0x')
+    const totalCapacity = cells.reduce((s, c) => s + BigInt(c.output.capacity), 0n)
+    const freeCapacity = freeCells.reduce((s, c) => s + BigInt(c.output.capacity), 0n)
+    return {
+      address:     this.address,
+      lockArgs:    this.lockArgs,
+      balance:     Number(totalCapacity) / 1e8,
+      available:   Number(freeCapacity) / 1e8,
+      inUse:       Number(totalCapacity - freeCapacity) / 1e8,
+      cellCount:   cells.length,
+      freeCells:   freeCells.length,
+    }
+  }
 }
 
 module.exports = { AgentWallet, depositDataMarker }

@@ -117,6 +117,19 @@ class Tournament extends EventEmitter {
     // Buffer after game ends before payout — allows result submission + on-chain finality
     this.settlementBufferMs = opts.settlementBufferMs || 30000; // 30s default
 
+    // v0.3.0 block-based fields
+    this.playerCount       = opts.playerCount || opts.players || 2;
+    this.registeredPlayers = opts.registeredPlayers || 0;
+    this.entryCutoffBlock  = opts.entryCutoffBlock || null;
+    this.startBlock        = opts.startBlock || null;
+    this.endBlock          = opts.endBlock || null;
+    this.durationBlocks    = opts.durationBlocks || null;
+    this.startMode         = opts.startMode || 'lightning';
+    this.romHash           = opts.romHash || null;
+    this.approvedAgentHashes = opts.approvedAgentHashes || [];
+    this._isOrganiser      = !opts.skipEscrow && !opts._joinedDistributed; // true if we created it
+    this.tournamentMode    = opts.tournamentMode || 'local';
+
     this.fiber     = fiber;
     this.gameDef   = loadGameDef(this.gameId);
     this.mode      = this.gameDef.tournament_modes?.find(m => m.id === this.modeId)
@@ -916,6 +929,66 @@ class Tournament extends EventEmitter {
           }
         }
 
+        // ── TM: Scan for intent cells and batch-register new players ────
+        if ((this.state === 'CREATED' || this.state === 'WAITING_PLAYERS' || cell.state === 'OPEN') &&
+            this._isOrganiser && this._chainStore) {
+          const cutoff = cell.entryCutoffBlock || this.entryCutoffBlock;
+          const registered = cell.registeredPlayers || Object.keys(this.players).length;
+          const required = cell.playerCount || this.playerCount || this.maxPlayers || 2;
+
+          // Only scan if we still need players and before cutoff
+          if (registered < required && (!cutoff || header.number < cutoff)) {
+            try {
+              const intents = await this._chainStore.scanIntentCells(this.id);
+              // Filter: only new intents not already registered
+              const knownAddresses = new Set((cell.players || []).map(p => p.address));
+              const newIntents = intents.filter(i => i.playerAddress && !knownAddresses.has(i.playerAddress));
+
+              // Verify agent code hashes
+              const approved = cell.approvedAgentHashes || this.approvedAgentHashes || [];
+              const verified = approved.length > 0
+                ? newIntents.filter(i => approved.includes(i.agentCodeHash))
+                : newIntents; // no approved list = accept all
+
+              if (verified.length > 0) {
+                const batch = verified.slice(0, required - registered); // don't exceed playerCount
+                const { outPoint } = await this._chainStore.batchRegisterPlayers(
+                  cell.outPoint, cell, batch
+                );
+                if (outPoint) {
+                  // Update local state
+                  for (const intent of batch) {
+                    const pid = `player-${Object.keys(this.players).length}`;
+                    this.players[pid] = {
+                      name: intent.playerAddress?.slice(-8) || pid,
+                      address: intent.playerAddress,
+                      fiberPeerId: intent.fiberPeerId,
+                      paid: false,
+                      channelFunded: false,
+                    };
+                    this.registeredPlayers = Object.keys(this.players).length;
+                    console.log(`[Tournament] Registered ${pid} (${intent.playerAddress?.slice(0,20)}...)`);
+                    this.emit('player_registered', { playerId: pid, address: intent.playerAddress });
+                  }
+                }
+              }
+            } catch (e) {
+              // Intent scan failed — non-fatal, retry next block
+              if (!e.message?.includes('OutPointAlreadySpent')) {
+                console.warn('[Tournament] Intent scan error:', e.message);
+              }
+            }
+          }
+
+          // ── Cutoff block reached — check if we have enough players ────
+          if (cutoff && header.number >= cutoff && !this._cutoffHandled) {
+            this._cutoffHandled = true;
+            console.log(`[Tournament] entryCutoffBlock ${cutoff} reached`);
+            // Delegate to TournamentManager's deadline handler
+            this.emit('cutoff_reached', { tournamentId: this.id, block: header.number });
+          }
+        }
+
         // Scan for per-agent score cells (not the tournament cell's scoreSubmissions)
         if (this.state === 'SETTLING') {
           const wallet = this._wallet || this._chainStore?.wallet;
@@ -1421,6 +1494,7 @@ class TournamentManager extends EventEmitter {
     this.fiber          = new FiberClient(this.fiberRpc, { authToken: this.fiberAuthToken });
     this.tournaments = new Map();
     this._pollInterval = null;
+    this._blockTracker = opts.blockTracker || null; // v0.3.0: shared BlockTracker instance
 
     // Chain store + agent wallet — optional, requires CKB_PRIVATE_KEY
     this.chainStore = null;
@@ -1486,88 +1560,113 @@ class TournamentManager extends EventEmitter {
     t.on('payout_sent',       e => { log('payout_sent', e);       this.emit('payout_sent',       { tournamentId: t.id, ...e }); });
     t.on('complete',          e => { t._logger?.complete(e);      this.emit('complete',          e); });
     t.on('error',             e => { log('error', e);             this.emit('error',             e); });
+    t.on('block_countdown',   e => { this.emit('block_countdown',  { tournamentId: t.id, ...e }); });
+    t.on('cutoff_reached',    e => { this._checkRegistrationDeadline(t); });
 
-    // Write escrow cell to CKB (async — non-blocking, logs result)
-    // Skip for distributed joins — the escrow already exists on-chain
-    if (this.chainStore && !opts.skipEscrow) {
-      t._chainStore = this.chainStore;
-      this._writeEscrowCell(t).catch(e =>
-        console.warn('[TournamentManager] Escrow cell write failed:', e.message)
-      );
-    } else if (this.chainStore) {
+    // Ensure chain store is always available
+    if (this.chainStore) {
       t._chainStore = this.chainStore;
     } else {
-      // Ensure a read-only chain store is always available for distributed scanning/submission
       const { ChainStore } = require('./chain-store');
       t._chainStore = new ChainStore({ rpcUrl: this.ckbRpcUrl || 'https://testnet.ckbapp.dev/', wallet: this.wallet });
     }
 
-    // Early snapshot as fallback — _writeEscrowCell will overwrite with a post-escrow snapshot
-    if (this.wallet && !opts.skipEscrow) {
-      this.wallet.snapshotOutpoints()
-        .then(snap => {
-          if (!t._depositSnapshot) {  // don't overwrite the post-escrow snapshot
-            t._depositSnapshot = snap;
-            console.log(`[TournamentManager] Deposit snapshot (early): ${snap.size} cells`);
-          }
-        })
-        .catch(() => {});
+    // v0.3.0: Block-based lifecycle for distributed tournaments
+    if (opts.tournamentMode === 'distributed' && this._blockTracker) {
+      const tip = this._blockTracker.tipHeader?.number || 0;
+      const startDelayBlocks = opts.startDelayBlocks || 50;
+      const channelGapBlocks = 30; // gap between cutoff and start for channel opens
+      const durationBlocks   = opts.durationBlocks || Math.round((opts.timeLimitMinutes || 10) * 60 / (this._blockTracker.avgBlockTime / 1000));
+
+      t.entryCutoffBlock = tip + startDelayBlocks;
+      t.startBlock       = t.entryCutoffBlock + channelGapBlocks;
+      t.endBlock         = t.startBlock + durationBlocks;
+      t.durationBlocks   = durationBlocks;
+      t.startMode        = 'block';
+      t.playerCount      = opts.players || 2;
+      t.registeredPlayers = 0;
+
+      console.log(`[TournamentManager] Block lifecycle: cutoff=${t.entryCutoffBlock}, start=${t.startBlock}, end=${t.endBlock} (duration=${durationBlocks} blocks)`);
     }
 
-    // Registration deadline check
-    const msUntilDeadline = t.registrationDeadline - Date.now();
-    setTimeout(() => this._checkRegistrationDeadline(t), msUntilDeadline);
+    // Write tournament cell to CKB (async — non-blocking)
+    // Skip for distributed joins — the TC already exists on-chain
+    if (this.chainStore && !opts.skipEscrow) {
+      this._writeTournamentCell(t).catch(e =>
+        console.warn('[TournamentManager] Tournament cell write failed:', e.message)
+      );
+    }
+
+    // Block-based cutoff handled by distributed polling (BlockTracker events)
+    // Timestamp-based fallback for local tournaments
+    if (opts.tournamentMode !== 'distributed') {
+      const registrationMs = (opts.registrationMinutes || 10) * 60 * 1000;
+      setTimeout(() => this._checkRegistrationDeadline(t), registrationMs);
+    }
 
     return t;
   }
 
-  async _writeEscrowCell(t) {
+  async _writeTournamentCell(t) {
     let fiberPeerId = '';
     try {
       const info = await this.fiber.getNodeInfo();
       fiberPeerId = info.node_id || '';
     } catch (_) {}
 
-    const { txHash, outPoint } = await this.chainStore.createEscrowCell({
+    const chainData = {
       ...t._chainData(),
       fiberPeerId,
-    });
-    t.chainOutPoint = outPoint;
-    console.log(`[TournamentManager] Escrow cell on-chain: ${txHash}`);
-    this.emit('chain_escrow', { tournamentId: t.id, txHash, outPoint });
+      playerCount:      t.playerCount || t.maxPlayers || 2,
+      registeredPlayers: t.registeredPlayers || 0,
+      entryCutoffBlock: t.entryCutoffBlock || null,
+      startBlock:       t.startBlock || null,
+      endBlock:         t.endBlock || null,
+      durationBlocks:   t.durationBlocks || null,
+      startMode:        t.startMode || 'lightning',
+      romHash:          t.romHash || null,
+      approvedAgentHashes: t.approvedAgentHashes || [],
+    };
 
-    // Re-snapshot AFTER escrow tx confirms so its change output isn't mistaken for a deposit
-    if (this.wallet) {
-      t._depositSnapshot = await this.wallet.snapshotOutpoints();
-      console.log(`[TournamentManager] Deposit snapshot updated post-escrow: ${t._depositSnapshot.size} cells`);
-    }
+    const { txHash, outPoint } = await this.chainStore.createTournamentCell(chainData);
+    t.chainOutPoint = outPoint;
+    console.log(`[TournamentManager] Tournament cell on-chain (OPEN): ${txHash}`);
+    this.emit('chain_tournament', { tournamentId: t.id, txHash, outPoint });
   }
 
+  /** @deprecated Use _writeTournamentCell */
+  async _writeEscrowCell(t) { return this._writeTournamentCell(t); }
+
+  /**
+   * Check registration status — called by timer (local) or block handler (distributed).
+   * For distributed: called when entryCutoffBlock is reached.
+   */
   async _checkRegistrationDeadline(t) {
-    if (t.state !== 'CREATED' && t.state !== 'WAITING_PLAYERS') return;
-    const paidPlayers = Object.values(t.players).filter(p => p.paid).length;
-    const metMin = paidPlayers >= t.minPlayers;
+    if (t.state !== 'CREATED' && t.state !== 'WAITING_PLAYERS' && t.state !== 'OPEN') return;
+    const registered = t.registeredPlayers || Object.keys(t.players).length;
+    const required = t.playerCount || t.minPlayers || 2;
+    const met = registered >= required;
 
-    console.log(`[TournamentManager] Registration deadline reached for ${t.id}: ${paidPlayers}/${t.minPlayers} paid`);
+    console.log(`[TournamentManager] Registration deadline for ${t.id}: ${registered}/${required} registered`);
 
-    if (!metMin) {
-      console.log(`[TournamentManager] Min players not met — cancelling ${t.id}`);
+    if (!met) {
+      console.log(`[TournamentManager] Player count not met — cancelling ${t.id}`);
       t.state = 'CANCELLED';
-      this.emit('cancelled', { tournamentId: t.id, reason: 'min_players_not_met', paidPlayers, minPlayers: t.minPlayers });
-      // Update chain cell
+      this.emit('cancelled', { tournamentId: t.id, reason: 'player_count_not_met', registered, required });
       if (this.chainStore && t.chainOutPoint) {
         await this.chainStore.closeRegistration(t.chainOutPoint, t._chainData())
           .catch(e => console.warn('Chain cancel failed:', e.message));
       }
-      // TODO: refund entry fees via Fiber
+      // Fiber channels close cooperatively — each PA's agent handles its own channel
     } else {
-      console.log(`[TournamentManager] Min players met — activating ${t.id}`);
+      console.log(`[TournamentManager] Player count met — transitioning to FUNDED`);
+      t.state = 'FUNDED';
       if (this.chainStore && t.chainOutPoint) {
         const { outPoint } = await this.chainStore.closeRegistration(t.chainOutPoint, t._chainData())
-          .catch(e => { console.warn('Chain funding failed:', e.message); return {}; });
+          .catch(e => { console.warn('Chain funding transition failed:', e.message); return {}; });
         if (outPoint) t.chainOutPoint = outPoint;
       }
-      this.emit('registration_closed', { tournamentId: t.id, paidPlayers });
+      this.emit('registration_closed', { tournamentId: t.id, registered });
     }
   }
 

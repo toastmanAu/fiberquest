@@ -1026,6 +1026,9 @@ app.whenReady().then(async () => {
     console.log(`[Main] BlockTracker: mode=${blockTracker.mode}, tip=${blockTracker.tipHeader?.number}, avgBlockTime=${(blockTracker.avgBlockTime/1000).toFixed(1)}s`);
   }).catch(e => console.warn('[Main] BlockTracker start failed:', e.message));
 
+  // Share BlockTracker with TournamentManager for block-based lifecycle
+  tournamentManager._blockTracker = blockTracker;
+
   // Start score relay for distributed tournaments
   startScoreRelay(8767);
 
