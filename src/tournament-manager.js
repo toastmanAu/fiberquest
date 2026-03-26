@@ -1279,8 +1279,23 @@ class Tournament extends EventEmitter {
                   );
                   console.log(`[Tournament] Batch-register TX: ${regResult?.txHash}`);
                 } catch (regErr) {
-                  console.error(`[Tournament] Batch-register FAILED: ${regErr.message}`);
-                  // Still register locally so the tournament can proceed
+                  // Retry with fresh outpoint — original may be stale from other agent wallet txs
+                  if (regErr.message?.includes('OutPointAlreadySpent') || regErr.message?.includes('Dead') || regErr.message?.includes('Unknown')) {
+                    console.log(`[Tournament] Stale outpoint — retrying with fresh scan...`);
+                    try {
+                      const freshCells = await this._chainStore.scanTournaments(this.id);
+                      if (freshCells.length > 0) {
+                        regResult = await this._chainStore.batchRegisterPlayers(
+                          freshCells[0].outPoint, freshCells[0], batch
+                        );
+                        console.log(`[Tournament] Batch-register retry TX: ${regResult?.txHash}`);
+                      }
+                    } catch (retryErr) {
+                      console.error(`[Tournament] Batch-register retry FAILED: ${retryErr.message}`);
+                    }
+                  } else {
+                    console.error(`[Tournament] Batch-register FAILED: ${regErr.message}`);
+                  }
                 }
                 // Update local state regardless (chain write may confirm later or retry next block)
                 {
