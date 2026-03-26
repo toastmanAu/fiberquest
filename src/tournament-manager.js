@@ -1282,10 +1282,19 @@ class Tournament extends EventEmitter {
 
               if (verified.length > 0) {
                 const batch = verified.slice(0, required - registered); // don't exceed playerCount
-                const { outPoint } = await this._chainStore.batchRegisterPlayers(
-                  cell.outPoint, cell, batch
-                );
-                if (outPoint) {
+                console.log(`[Tournament] Batch-registering ${batch.length} player(s) on chain...`);
+                let regResult;
+                try {
+                  regResult = await this._chainStore.batchRegisterPlayers(
+                    cell.outPoint, cell, batch
+                  );
+                  console.log(`[Tournament] Batch-register TX: ${regResult?.txHash}`);
+                } catch (regErr) {
+                  console.error(`[Tournament] Batch-register FAILED: ${regErr.message}`);
+                  // Still register locally so the tournament can proceed
+                }
+                // Update local state regardless (chain write may confirm later or retry next block)
+                {
                   // Update local state
                   for (const intent of batch) {
                     const pid = `player-${Object.keys(this.players).length}`;
