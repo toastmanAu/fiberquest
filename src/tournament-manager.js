@@ -842,17 +842,27 @@ class Tournament extends EventEmitter {
       }
     }
 
-    // Check if channel already exists
+    // Check if channel already exists (match by any peer ID format — hex pubkey or Qm multihash)
     const channels = await this.fiber.listChannels();
-    const existing = (channels?.channels || channels || []).find(c =>
-      (c.peer_id || c.remote_peer_id) === tmPeerId &&
-      c.state?.bit_name === 'CHANNEL_READY'
+    const allChannels = channels?.channels || channels || [];
+    const readyChannels = allChannels.filter(c =>
+      c.state?.bit_name === 'CHANNEL_READY' || c.state?.state_name === 'CHANNEL_READY' || c.state === 'CHANNEL_READY'
     );
+
+    // Try to match by peer ID (may be hex pubkey on TC vs Qm hash from listChannels)
+    let existing = readyChannels.find(c => (c.peer_id || c.remote_peer_id) === tmPeerId);
+
+    // If no match by exact peer ID, use any ready channel (for 2-node setups with one channel)
+    if (!existing && readyChannels.length === 1) {
+      existing = readyChannels[0];
+      console.log(`[Tournament] Using existing channel (peer ID format mismatch — TC has hex, channel has Qm)`);
+    }
 
     let channelId;
     if (existing) {
       channelId = existing.channel_id;
-      console.log(`[Tournament] Existing channel to TM: ${channelId.slice(0, 20)}...`);
+      const localBal = existing.local_balance ? Number(BigInt(existing.local_balance)) / 1e8 : 0;
+      console.log(`[Tournament] Existing channel to TM: ${channelId.slice(0, 20)}... (local: ${localBal} CKB)`);
     } else {
       // Open new channel — fund with entry fee + buffer for fees
       const fundingAmount = BigInt(Math.round(this.entryFee * 1.1 * 1e8)); // 10% buffer
@@ -868,8 +878,7 @@ class Tournament extends EventEmitter {
         await new Promise(r => setTimeout(r, 3000));
         const chs = await this.fiber.listChannels();
         const ready = (chs?.channels || chs || []).find(c =>
-          (c.peer_id || c.remote_peer_id) === tmPeerId &&
-          c.state?.bit_name === 'CHANNEL_READY'
+          c.state?.bit_name === 'CHANNEL_READY' || c.state?.state_name === 'CHANNEL_READY'
         );
         if (ready) {
           channelId = ready.channel_id;
