@@ -1266,8 +1266,8 @@ class Tournament extends EventEmitter {
           const registered = cell.registeredPlayers || Object.keys(this.players).length;
           const required = cell.playerCount || this.playerCount || this.maxPlayers || 2;
 
-          // Only scan if we still need players and before cutoff
-          if (registered < required && (!cutoff || header.number < cutoff)) {
+          // Scan if we still need players — include cutoff block itself (<=)
+          if (registered < required && (!cutoff || header.number <= cutoff)) {
             try {
               const intents = await this._chainStore.scanIntentCells(this.id);
               // Filter: only new intents not already registered
@@ -1311,11 +1311,12 @@ class Tournament extends EventEmitter {
           }
 
           // ── Cutoff block reached — check if we have enough players ────
+          // Run AFTER intent scan so any last-block registrations are included
           if (cutoff && header.number >= cutoff && !this._cutoffHandled) {
             this._cutoffHandled = true;
-            console.log(`[Tournament] entryCutoffBlock ${cutoff} reached`);
-            // Delegate to TournamentManager's deadline handler
-            this.emit('cutoff_reached', { tournamentId: this.id, block: header.number });
+            const finalCount = Object.keys(this.players).length;
+            console.log(`[Tournament] entryCutoffBlock ${cutoff} reached — ${finalCount}/${required} players`);
+            this.emit('cutoff_reached', { tournamentId: this.id, block: header.number, registered: finalCount, required });
           }
         }
 
