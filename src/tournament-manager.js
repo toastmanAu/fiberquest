@@ -567,41 +567,33 @@ class Tournament extends EventEmitter {
       timeLimitMs: this.timeLimitMs,
     });
 
-    // Write ACTIVE to chain first, then set timer AFTER confirmation.
-    // This way the Pi discovers ACTIVE at roughly the same time the organiser starts.
+    // Write ACTIVE to chain with endsAt calculated NOW (same moment game starts).
+    // Chain write is fire-and-forget — organiser and remote agent both use the
+    // same absolute endsAt timestamp, so ~0s sync offset regardless of chain latency.
     if (this._chainStore && this.tournamentMode === 'distributed') {
       const SUBMISSION_WINDOW_MS = 60000;
+      const endsAt             = Date.now() + this.timeLimitMs;
+      const submissionDeadline = endsAt + SUBMISSION_WINDOW_MS;
 
-      // Write to chain — don't start timer yet
-      console.log(`[Tournament] Writing ACTIVE to chain — timer starts after confirmation...`);
+      this._endsAt = endsAt;
+      this._submissionDeadline = submissionDeadline;
+
+      console.log(`[Tournament] endsAt set: ${new Date(endsAt).toISOString()} (in ${this.timeLimitMs/60000} min)`);
+      console.log(`[Tournament] Writing ACTIVE to chain (fire-and-forget)...`);
+
+      // Fire-and-forget chain write — don't block game start
       this._chainStore.scanTournaments(this.id).then(async cells => {
         if (!cells[0]) return;
-
-        // Calculate timestamps AFTER chain write is confirmed
-        const endsAt             = Date.now() + this.timeLimitMs;
-        const submissionDeadline = endsAt + SUBMISSION_WINDOW_MS;
-
         try {
           await this._chainStore.activateTournament(cells[0].outPoint, {
             ...cells[0], ...this._chainData(),
             endsAt, submissionDeadline
           });
-          console.log(`[Tournament] Chain ACTIVE confirmed — timer starts NOW`);
-          console.log(`  endsAt:             ${new Date(endsAt).toISOString()} (in ${this.timeLimitMs/60000} min)`);
-          console.log(`  submissionDeadline: ${new Date(submissionDeadline).toISOString()}`);
-
-          this._endsAt = endsAt;
-          this._submissionDeadline = submissionDeadline;
-          this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs);
+          console.log(`[Tournament] Chain ACTIVE confirmed`);
         } catch (e) {
-          console.warn(`[Tournament] Chain ACTIVE failed: ${e.message} — using local timer`);
-          this._endsAt = Date.now() + this.timeLimitMs;
-          this._submissionDeadline = this._endsAt + SUBMISSION_WINDOW_MS;
-          this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs);
+          console.warn(`[Tournament] Chain ACTIVE write failed: ${e.message}`);
         }
       }).catch(() => {
-        // Fallback
-        this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs);
       });
     }
 
