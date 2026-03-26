@@ -22,7 +22,7 @@ const { EventEmitter } = require('events');
 const WebSocket = require('ws');
 
 const POLL_INTERVAL_MS   = 2000;  // 2s tip check (tiny response)
-const BLOCK_HISTORY_SIZE = 20;    // rolling window for avg block time
+const BLOCK_HISTORY_SIZE = 50;    // rolling window for avg block time (~8-10 min of history)
 const WS_RECONNECT_MS    = 5000;  // reconnect delay on WebSocket failure
 
 class BlockTracker extends EventEmitter {
