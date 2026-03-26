@@ -454,7 +454,19 @@ function setupIPC() {
     console.log(`[Main] retroarch:launch called — gameId=${gameId}`);
     const h = CONFIG.retroarchHost;
     const isLocal = h === 'localhost' || h === '127.0.0.1' || h === '::1';
-    if (!isLocal) { console.log('[Main] RetroArch not local, skipping'); return { ok: false, reason: 'RetroArch is not on this machine' }; }
+    // Remote RetroArch — can't auto-launch reliably across device types.
+    // Tell the user to launch the game on their device; we'll detect and poll.
+    if (!isLocal) {
+      console.log(`[Main] Remote RetroArch at ${h} — user must launch game on device`);
+      const gamesDir = path.join(__dirname, '../games');
+      let game;
+      try {
+        game = JSON.parse(fs.readFileSync(path.join(gamesDir, `${gameId}.json`), 'utf8'));
+      } catch (_) {
+        return { ok: false, reason: `Game not found: ${gameId}` };
+      }
+      return { ok: false, remote: true, host: h, reason: `Launch "${game.name || gameId}" on your device (${h}). FiberQuest will detect it automatically.` };
+    }
 
     const gamesDir = path.join(__dirname, '../games');
     let game;
