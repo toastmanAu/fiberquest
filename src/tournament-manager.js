@@ -1269,10 +1269,13 @@ class Tournament extends EventEmitter {
           // Scan if we still need players — include cutoff block itself (<=)
           if (registered < required && (!cutoff || header.number <= cutoff)) {
             try {
+              console.log(`[Tournament] Block ${header.number}: scanning intents (${registered}/${required}, cutoff=${cutoff})`);
               const intents = await this._chainStore.scanIntentCells(this.id);
+              console.log(`[Tournament] Found ${intents.length} intent(s)`);
               // Filter: only new intents not already registered
               const knownAddresses = new Set((cell.players || []).map(p => p.address));
               const newIntents = intents.filter(i => i.playerAddress && !knownAddresses.has(i.playerAddress));
+              console.log(`[Tournament] New intents: ${newIntents.length} (${knownAddresses.size} known addresses)`);
 
               // Verify agent code hashes
               const approved = cell.approvedAgentHashes || this.approvedAgentHashes || [];
