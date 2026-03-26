@@ -36,6 +36,7 @@ class RetroArchClient {
     this.host = host; this.port = port;
     this.socket = dgram.createSocket('udp4');
     this.pending = new Map();
+    this._useLegacyRAM = false; // fallback to READ_CORE_RAM for older RetroArch / handhelds
     this.socket.on('message', (msg) => this._onMessage(msg.toString().trim()));
   }
   bind() { return new Promise(r => this.socket.bind(0, r)); }
@@ -45,11 +46,27 @@ class RetroArchClient {
     const stripped = addr.toLowerCase().replace(/^0x/, '').replace(/^0+/, '') || '0';
     return '0x' + stripped;
   }
+  // Strip 0x7E WRAM prefix for READ_CORE_RAM (legacy path doesn't use bank prefix)
+  _stripWramPrefix(addr) {
+    const stripped = addr.toLowerCase().replace(/^0x/, '');
+    if (stripped.startsWith('7e')) return stripped.slice(2).replace(/^0+/, '') || '0';
+    return stripped.replace(/^0+/, '') || '0';
+  }
   readMemory(addr, size = 1) {
     return new Promise((resolve, reject) => {
-      const cmd = `READ_CORE_MEMORY ${addr} ${size}\n`;
-      const key = this._normalizeAddr(addr);
+      let key;
+      let cmd;
+      if (this._useLegacyRAM) {
+        // Legacy: READ_CORE_RAM <addr_no_prefix> <size> — no 0x prefix, no 7E bank
+        const legacyAddr = this._stripWramPrefix(addr);
+        key = '0x' + legacyAddr;  // key matches what response will normalize to
+        cmd = `READ_CORE_RAM ${legacyAddr} ${size}\n`;
+      } else {
+        key = this._normalizeAddr(addr);
+        cmd = `READ_CORE_MEMORY ${addr} ${size}\n`;
+      }
       this.pending.set(key, resolve);
+
       const buf = Buffer.from(cmd);
       this.socket.send(buf, 0, buf.length, this.port, this.host, err => { if (err) reject(err); });
       setTimeout(() => {
@@ -59,10 +76,36 @@ class RetroArchClient {
   }
   _onMessage(msg) {
     const parts = msg.split(' ');
-    if (parts[0] !== 'READ_CORE_MEMORY') return;
-    const addr = this._normalizeAddr(parts[1]);
+    const cmd = parts[0];
 
-    // Extract all bytes from response: "READ_CORE_MEMORY 0x1828 ff 00" → [ff, 00]
+    // Handle both READ_CORE_MEMORY and READ_CORE_RAM responses
+    if (cmd !== 'READ_CORE_MEMORY' && cmd !== 'READ_CORE_RAM') return;
+
+    // Auto-detect: if READ_CORE_MEMORY returns "no memory map defined", switch to legacy
+    if (cmd === 'READ_CORE_MEMORY' && msg.includes('no memory map defined')) {
+      if (!this._useLegacyRAM) {
+        console.log('[RetroArch] READ_CORE_MEMORY not supported — switching to READ_CORE_RAM (legacy mode)');
+        this._useLegacyRAM = true;
+      }
+      // Resolve pending with null so it retries next poll cycle with legacy command
+      const addr = this._normalizeAddr(parts[1]);
+      const cb = this.pending.get(addr);
+      if (cb) { this.pending.delete(addr); cb(null); }
+      return;
+    }
+
+    // For legacy READ_CORE_RAM, the addr doesn't have 0x prefix — normalize it
+    const rawAddr = parts[1];
+    const addr = this._normalizeAddr(rawAddr);
+
+    // Error response: "READ_CORE_RAM 7e0575 -1"
+    if (parts[2] === '-1') {
+      const cb = this.pending.get(addr);
+      if (cb) { this.pending.delete(addr); cb(null); }
+      return;
+    }
+
+    // Extract all bytes from response
     const bytes = parts.slice(2).map(b => parseInt(b, 16));
 
     // Reconstruct value: single byte or multi-byte little-endian
