@@ -2291,8 +2291,23 @@ function handleTournamentEvent(ev) {
       const idx = players.findIndex(p => p.id === ev.playerId);
       const slotIdx = idx >= 0 ? idx : parseInt((ev.playerId || '').replace('player-','')) || 0;
       const st = document.getElementById(`status-${slotIdx}`);
-      retroLog(`[P${slotIdx+1}] Payment confirmed on-chain ✅`, 'ok')
-      if (st) { st.textContent = '✅ PAID'; st.style.color = 'var(--green)'; }
+      retroLog(`[P${slotIdx+1}] Payment confirmed ✅`, 'ok');
+      waitingStatus(`Entry fee received — ${ev.amount_ckb || ''} CKB`, 'ok');
+
+      // Hide QR, show paid status
+      const invoiceBox = document.getElementById(`invoice-${slotIdx}`);
+      if (invoiceBox) invoiceBox.style.display = 'none';
+      if (st) { st.textContent = '✅ PAID — submitting intent to chain...'; st.style.color = 'var(--green)'; }
+
+      // v0.3.0: After payment confirmed, create intent cell for distributed tournaments
+      if (currentTournament?.tournamentMode === 'distributed') {
+        waitingStatus('Creating intent cell on-chain...', 'cyan');
+        // The joinDistributed call already created the intent cell —
+        // but if it was deferred until payment, trigger it now
+        // Intent was already submitted in joinDistributed, so just update status
+        if (st) { st.textContent = '✅ PAID — waiting for TM to register...'; }
+        waitingStatus('Intent cell + payment confirmed — waiting for organiser', 'ok');
+      }
       // mark locally
       if (players[slotIdx]) players[slotIdx].paid = true;
       const paidCount = players.filter(p => p.paid).length;
@@ -2378,6 +2393,12 @@ function handleTournamentEvent(ev) {
       const registered = currentTournament?.registeredPlayers || '?';
       const total = currentTournament?.playerCount || currentTournament?.maxPlayers || '?';
       if (ws) ws.textContent = `${registered}/${total} registered`;
+      break;
+    }
+    case 'intent_submitted': {
+      waitingStatus(`Intent cell confirmed on-chain: ${ev.txHash?.slice(0, 16)}...`, 'ok');
+      const st0 = document.getElementById('status-0');
+      if (st0) { st0.textContent = '✅ PAID + Intent on-chain — waiting for TM...'; st0.style.color = 'var(--green)'; }
       break;
     }
     case 'player_registered_self': {
@@ -2624,40 +2645,35 @@ async function joinDistributedTournament(tournamentId) {
   // Show transaction confirmation first
   showTxConfirm('join', { entryFee }, async () => {
     try {
-      retroLog(`Submitting intent cell to join ${tournamentId}...`, 'info');
+      // Step 1: Create local tournament mirror + register player locally
+      retroLog('Setting up tournament...', 'info');
       currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
-
-      if (currentTournament.intentSubmitted) {
-        retroLog('Intent cell submitted — waiting for TM to register you', 'ok');
-      } else {
-        retroLog(`Joined tournament: ${tournamentId}`, 'ok');
-      }
-
       showWaitingRoom();
 
-      // v0.3.0: show intent status with prominent on-screen updates
       setTimeout(() => {
         const nameInput = document.getElementById('name-0');
+        if (nameInput) { nameInput.value = playerName; nameInput.disabled = true; }
         const btn = document.querySelector('#step-name-0 .slot-button');
-        if (nameInput) {
-          nameInput.value = playerName;
-          nameInput.disabled = true;
-        }
-        if (btn) {
-          btn.textContent = 'INTENT SENT';
-          btn.disabled = true;
-        }
-        const st = document.getElementById('status-0');
-        if (st) {
-          st.textContent = 'Intent cell on-chain — waiting for TM to register...';
-          st.style.color = 'var(--cyan)';
-        }
+        if (btn) { btn.textContent = 'PAYING...'; btn.disabled = true; }
         document.getElementById('slot-0')?.classList.add('active');
+        waitingStatus('Tournament joined — scan QR to pay entry fee to your agent', 'cyan');
 
-        // Update the main status text prominently
-        const ws = document.getElementById('waitStatus');
-        if (ws) ws.textContent = 'Intent submitted — waiting for organiser to register you...';
+        // Step 2: Trigger JoyID payment → agent wallet
+        // This shows the connect QR, then sign QR
+        window.fiberquest.tournament.fundAgent(currentTournament.id, playerId)
+          .then(() => {
+            waitingStatus('JoyID QR ready — scan to pay entry fee', 'info');
+          })
+          .catch(e => {
+            waitingStatus('Payment setup failed: ' + e.message, 'error');
+            retroLog('Fund agent failed: ' + e.message, 'error');
+          });
       }, 500);
+
+      // Step 3: After player_paid event fires (handled in handleTournamentEvent),
+      // the intent cell will be created automatically.
+      // See player_paid handler below.
+
     } catch (e) {
       retroLog('Join failed: ' + (e.message || e), 'error');
     }

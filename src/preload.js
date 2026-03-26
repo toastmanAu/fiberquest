@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('fiberquest', {
   // Tournament
   tournament: {
     create:       (opts)               => ipcRenderer.invoke('tournament:create', opts),
+    fundAgent:    (tId, pId)           => ipcRenderer.invoke('tournament:fundAgent', tId, pId),
     addPlayer:    (tId, pId, name)     => ipcRenderer.invoke('tournament:addPlayer', tId, pId, name),
     connectPlayer:(tId, pId)           => ipcRenderer.invoke('tournament:connectPlayer', tId, pId),
     buildPayTx:   (tId, pId, addr)     => ipcRenderer.invoke('tournament:buildPlayerPayTx', tId, pId, addr),

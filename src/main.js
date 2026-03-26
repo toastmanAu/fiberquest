@@ -685,6 +685,13 @@ function setupTournamentIPC() {
     return t.status();
   });
 
+  // v0.3.0: Fund agent wallet for tournament entry (user pays via JoyID)
+  ipcMain.handle('tournament:fundAgent', async (_, tId, playerId) => {
+    const t = tournamentManager.get(tId);
+    if (!t) throw new Error('Tournament not found: ' + tId);
+    return t.fundAgentForEntry(playerId);
+  });
+
   ipcMain.handle('tournament:addPlayer', async (_, tId, playerId, name) => {
     const t = tournamentManager.get(tId);
     if (!t) throw new Error('Tournament not found: ' + tId);
@@ -798,30 +805,9 @@ function setupTournamentIPC() {
 
     console.log(`[Main] Joining tournament ${tournamentId} — ${cell.registeredPlayers || 0}/${cell.playerCount || cell.maxPlayers} players`);
 
-    // v0.3.0: Create intent cell on-chain to signal join interest
-    // TM will discover this and register us on the TC
-    if (agentWallet) {
-      let fiberPeerId = '';
-      try {
-        const info = await fiberClient.getNodeInfo();
-        fiberPeerId = info?.node_id || '';
-      } catch (_) {}
-
-      // Generate agent code hash (deterministic)
-      const crypto = require('crypto');
-      const tmCode = fs.readFileSync(path.join(__dirname, 'tournament-manager.js'), 'utf8');
-      const reCode = fs.readFileSync(path.join(__dirname, 'ram-engine.js'), 'utf8');
-      const agentCodeHash = 'sha256:' + crypto.createHash('sha256').update(tmCode + reCode).digest('hex').slice(0, 16);
-
-      console.log(`[Main] Creating intent cell (peer: ${fiberPeerId.slice(0, 16)}..., hash: ${agentCodeHash})`);
-      const intentResult = await chainStore.createIntentCell(agentWallet, tournamentId, {
-        playerAddress: agentWallet.address,
-        fiberPeerId,
-        agentCodeHash,
-        createdAtBlock: blockTracker?.tipHeader?.number || null,
-      });
-      console.log(`[Main] Intent cell created: ${intentResult.txHash}`);
-    }
+    // v0.3.0: Intent cell creation is DEFERRED until after user pays entry fee.
+    // Flow: joinDistributed (mirror) → fundAgent (JoyID payment) → player_paid → createIntentCell
+    // The intent cell will be created in the player_paid handler on the Tournament instance.
 
     // Create local tournament mirror from on-chain data
     const mySlotIndex = (cell.players || []).length;
@@ -854,11 +840,39 @@ function setupTournamentIPC() {
       t._sharedRamEngine = activeRamEngine;
     }
 
-    // Don't call addPlayer — TM will register us when it finds our intent cell
-    // Just start polling for state changes
+    // Don't call addPlayer — TM will register us when it finds our intent cell.
+    // Intent cell created AFTER user pays via JoyID (fundAgent → player_paid).
+    t.on('player_paid', async (ev) => {
+      console.log(`[Main] Player paid — creating intent cell now...`);
+      if (!agentWallet || !chainStore) return;
+      try {
+        let fiberPeerId = '';
+        try { fiberPeerId = (await fiberClient.getNodeInfo())?.node_id || ''; } catch (_) {}
+        const crypto = require('crypto');
+        const tmCode = fs.readFileSync(path.join(__dirname, 'tournament-manager.js'), 'utf8');
+        const reCode = fs.readFileSync(path.join(__dirname, 'ram-engine.js'), 'utf8');
+        const agentCodeHash = 'sha256:' + crypto.createHash('sha256').update(tmCode + reCode).digest('hex').slice(0, 16);
+
+        const intentResult = await chainStore.createIntentCell(agentWallet, tournamentId, {
+          playerAddress: agentWallet.address,
+          fiberPeerId,
+          agentCodeHash,
+          createdAtBlock: blockTracker?.tipHeader?.number || null,
+        });
+        console.log(`[Main] ✅ Intent cell created after payment: ${intentResult.txHash}`);
+        // Notify UI
+        if (mainWindow) mainWindow.webContents.send('tournament:event', {
+          event: 'intent_submitted', tournamentId, txHash: intentResult.txHash
+        });
+      } catch (e) {
+        console.error(`[Main] Intent cell creation failed: ${e.message}`);
+      }
+    });
+
+    // Start polling for state changes
     t.startDistributedPolling(blockTracker);
-    console.log(`[Main] Joined distributed tournament ${tournamentId} — intent cell submitted, waiting for TM registration`);
-    return { ...t.status(), organizerAddress: cell.organizerAddress, intentSubmitted: true };
+    console.log(`[Main] Joined distributed tournament ${tournamentId} — waiting for payment then intent cell`);
+    return { ...t.status(), organizerAddress: cell.organizerAddress, awaitingPayment: true };
   });
 }
 

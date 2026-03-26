@@ -366,6 +366,71 @@ class Tournament extends EventEmitter {
   }
 
   /**
+   * v0.3.0: Fund agent wallet for tournament entry.
+   * User pays via JoyID → funds go to their OWN agent address.
+   * After deposit confirmed, agent proceeds with intent cell + Fiber channel.
+   *
+   * Emits: connect_qr, sign_url, player_paid (reuses existing event names)
+   */
+  fundAgentForEntry(playerId) {
+    const player = this.players[playerId];
+    if (!player) throw new Error(`Unknown player: ${playerId}`);
+    if (!this._wallet) throw new Error('Agent wallet not configured');
+
+    // Step 1: JoyID connect to get player's address
+    const connectUrl = this._wallet.buildJoyIDConnectUrl(({ address, keyType }) => {
+      console.log(`[Tournament] JoyID connect for agent funding — ${address}`);
+      player.senderAddress = address;
+      player.joyidKeyType = keyType;
+      this.emit('player_connected', { playerId, name: player.name, address });
+
+      // Step 2: Build tx that sends entry fee from player's JoyID to agent wallet
+      this._buildAgentFundingTx(playerId, address).catch(e => {
+        console.error(`[Tournament] Agent funding tx failed: ${e.message}`);
+        this.emit('error', { message: e.message, playerId });
+      });
+    });
+
+    console.log(`[Tournament] Agent funding: JoyID connect for ${player.name}`);
+    this.emit('connect_qr', { playerId, name: player.name, connectUrl });
+    return { playerId, connectUrl };
+  }
+
+  async _buildAgentFundingTx(playerId, playerAddress) {
+    const player = this.players[playerId];
+    if (!player || !this._wallet) return;
+
+    // Destination is the agent's OWN address (not the organiser)
+    const { rawTx, dataMarker } = await this._wallet.buildPlayerDepositTx(
+      playerAddress, this.id, player.slotIndex || 0, this.entryFee,
+      { destinationAddress: this._wallet.address }
+    );
+
+    const callbackUrl = this._wallet.registerJoyIDCallback(async (payload) => {
+      console.log(`[Tournament] JoyID sign callback for agent funding — ${player.name}`);
+      try {
+        const signedTx = this._wallet.assembleSignedTx(cbId, payload);
+        const txHash = await this._wallet.sendRawTx(signedTx);
+        console.log(`[Tournament] ✅ Agent funded by ${player.name}: ${txHash}`);
+        player.paid = true;
+        this.emit('player_paid', { playerId, name: player.name, txHash, amount_ckb: this.entryFee });
+      } catch (e) {
+        console.error(`[Tournament] Agent funding failed: ${e.message}`);
+        this.emit('error', { message: `Payment failed: ${e.message}`, playerId });
+      }
+    });
+    const cbId = callbackUrl.split('/joyid/').pop().split('?')[0];
+
+    const signUrl = await this._wallet.buildJoyIDSignTxUrl(rawTx, playerAddress, callbackUrl, { entryFeeCkb: this.entryFee });
+
+    player.signUrl = signUrl;
+    player.dataMarker = dataMarker;
+
+    console.log(`[Tournament] Agent funding sign URL for ${player.name}`);
+    this.emit('sign_url', { playerId, name: player.name, signUrl, dataMarker });
+  }
+
+  /**
    * Set or update a player's payout invoice after registration.
    * Useful when players submit it async (e.g. scan QR on a second screen).
    * @param {string} playerId
