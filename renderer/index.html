@@ -1520,8 +1520,19 @@ async function checkServices() {
 
   try {
     const ra = await window.fiberquest.health.retroarch();
-    if (ra.ok) setSvc('retroarch', 'online', ra.response ? ra.response.slice(0,18) : 'connected');
-    else       setSvc('retroarch', 'offline', ra.reason || 'no response');
+    if (ra.ok) {
+      let label = 'connected';
+      if (ra.remote && ra.deviceName) {
+        label = `${ra.deviceName}`;
+        if (ra.game) label += ` — ${ra.game.slice(0, 20)}`;
+      } else if (ra.game) {
+        label = ra.game.slice(0, 25);
+      } else if (ra.response) {
+        label = ra.response.slice(0, 18);
+      }
+      setSvc('retroarch', 'online', label);
+    }
+    else setSvc('retroarch', 'offline', ra.reason || 'no response');
   } catch { setSvc('retroarch', 'offline', 'error'); }
 }
 

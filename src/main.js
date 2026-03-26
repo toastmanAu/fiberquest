@@ -256,7 +256,10 @@ function setupIPC() {
 
   ipcMain.handle('retroarch:ping', async () => {
     const dgram = require('dgram');
-    return new Promise((resolve) => {
+    const host = CONFIG.retroarchHost;
+    const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+
+    const udpResult = await new Promise((resolve) => {
       const sock = dgram.createSocket('udp4');
       let done = false;
       const finish = (result) => {
@@ -266,15 +269,35 @@ function setupIPC() {
         resolve(result);
       };
       sock.on('message', (msg) => {
-        finish({ ok: true, response: msg.toString().trim() });
+        const response = msg.toString().trim();
+        // Parse GET_STATUS: "GET_STATUS PLAYING super_nes,Game Name,crc32=xxx"
+        const match = response.match(/GET_STATUS (\w+)\s+(\w+),(.+),crc32=(\w+)/);
+        const info = match ? { state: match[1], system: match[2], game: match[3], crc32: match[4] } : {};
+        finish({ ok: true, response, ...info });
       });
       sock.on('error', () => finish({ ok: false }));
       setTimeout(() => finish({ ok: false, reason: 'timeout' }), 1500);
       const cmd = Buffer.from('GET_STATUS\n');
-      sock.send(cmd, CONFIG.retroarchUdp, CONFIG.retroarchHost, (err) => {
+      sock.send(cmd, CONFIG.retroarchUdp, host, (err) => {
         if (err) finish({ ok: false, reason: err.message });
       });
     });
+
+    // For remote devices, resolve hostname
+    if (!isLocal && udpResult.ok) {
+      udpResult.host = host;
+      udpResult.remote = true;
+      try {
+        const { execSync } = require('child_process');
+        const hostname = execSync(`avahi-resolve -a ${host} 2>/dev/null | awk '{print $2}'`, { encoding: 'utf8', timeout: 2000 }).trim().replace('.local', '');
+        if (hostname) udpResult.deviceName = hostname;
+      } catch (_) {
+        // Fallback: just use IP
+        udpResult.deviceName = host;
+      }
+    }
+
+    return udpResult;
   });
 
   // Fiber channel summary (for status bar)
