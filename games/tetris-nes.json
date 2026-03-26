@@ -93,5 +93,17 @@
     "Score Attack on level 0 is the fairest competitive format",
     "No lives mechanic — game ends when stack reaches top",
     "fceumm is the standard accurate NES core"
-  ]
+  ],
+  "genre": "Puzzle",
+  "year": "1989",
+  "publisher": "Nintendo",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/tetris-nes.png",
+  "rom_hashes": {
+    "crc32": "FB6AF012"
+  }
 }

@@ -51,5 +51,16 @@
   ],
   "rom_name": "Bubble Bobble (USA).nes",
   "name": "Bubble Bobble",
-  "system": "nes"
+  "system": "nes",
+  "genre": "Platformer",
+  "year": "1988",
+  "publisher": "Taito",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/bubble-bobble-nes.png",
+  "rom_hashes": {
+    "crc32": "CC27C7F7"
+  }
 }

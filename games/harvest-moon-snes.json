@@ -118,5 +118,15 @@
   ],
   "verification_method": "Open RetroArch memory viewer, start new game, earn first gold from selling crops, confirm 0x1F04-06 changes accordingly",
   "rom_name": "Harvest Moon (USA).sfc",
-  "name": "Harvest Moon"
+  "name": "Harvest Moon",
+  "publisher": "Natsume",
+  "players_supported": "1",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/harvest-moon-snes.png",
+  "rom_hashes": {
+    "crc32": "F829129E"
+  }
 }

@@ -53,5 +53,17 @@
   ],
   "rom_name": "Super Metroid (Japan, USA).sfc",
   "name": "Super Metroid",
-  "system": "snes"
+  "system": "snes",
+  "genre": "Action-Adventure",
+  "year": "1994",
+  "publisher": "Nintendo",
+  "players_supported": "1",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/super-metroid-snes.png",
+  "rom_hashes": {
+    "crc32": "260F35CA"
+  }
 }

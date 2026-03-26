@@ -52,5 +52,17 @@
   ],
   "rom_name": "Sonic The Hedgehog 2 (USA, Europe).md",
   "name": "Sonic the Hedgehog 2",
-  "system": "megadrive"
+  "system": "megadrive",
+  "genre": "Platformer",
+  "year": "1992",
+  "publisher": "Sega",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/sonic-the-hedgehog-2-md.png",
+  "rom_hashes": {
+    "crc32": "7B905383"
+  }
 }

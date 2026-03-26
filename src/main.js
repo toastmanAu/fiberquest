@@ -624,13 +624,46 @@ function setupTournamentIPC() {
         .filter(f => f.endsWith('.json'))
         .map(f => {
           const game = JSON.parse(fs.readFileSync(path.join(gamesDir, f), 'utf8'));
-          game.romAvailable = !!_findRom(game.rom_name, game.system || game.platform);
+          const romPath = _findRom(game.rom_name, game.system || game.platform);
+          game.romAvailable = !!romPath;
+          game.romPath = romPath || null;
+
+          // Implicit CRC32 verification
+          if (romPath && game.rom_hashes?.crc32) {
+            const actual = computeCrc32(romPath);
+            game.romHash = actual;
+            game.romVerified = actual === game.rom_hashes.crc32;
+          } else if (romPath) {
+            // ROM found but no reference hash in game def
+            game.romHash = computeCrc32(romPath);
+            game.romVerified = null; // unknown — no reference
+          } else {
+            game.romHash = null;
+            game.romVerified = null;
+          }
           return game;
         });
     } catch (e) {
       console.error('[Games] Failed to load:', e);
       return [];
     }
+  });
+
+  ipcMain.handle('games:verifyRom', (_, gameId) => {
+    const gamesDir = path.join(__dirname, '../games');
+    const gamePath = path.join(gamesDir, `${gameId}.json`);
+    if (!fs.existsSync(gamePath)) return { error: 'Game not found' };
+    const game = JSON.parse(fs.readFileSync(gamePath, 'utf8'));
+    const romPath = _findRom(game.rom_name, game.system || game.platform);
+    if (!romPath) return { match: false, error: 'ROM not found', expected: game.rom_hashes?.crc32 || null };
+    const actual = computeCrc32(romPath);
+    const expected = game.rom_hashes?.crc32 || null;
+    return {
+      match: expected ? actual === expected : null,
+      expected,
+      actual,
+      path: romPath,
+    };
   });
 
   // ── Distributed tournament: submit score ─────────────────────────────────
@@ -764,6 +797,27 @@ function _wireTournamentToRenderer(tm) {
   tm.on('error',             err  => { console.error('[TM→UI] error', err);
     const msg = err instanceof Error ? err.message : (err?.message || String(err));
     push('error', { message: msg, playerId: err?.playerId, name: err?.name }); });
+}
+
+// ── CRC32 computation ─────────────────────────────────────────────────────
+
+const _crc32Table = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+  let c = i;
+  for (let j = 0; j < 8; j++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+  _crc32Table[i] = c;
+}
+
+function computeCrc32(filePath) {
+  try {
+    const buf = fs.readFileSync(filePath);
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) crc = _crc32Table[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+    return ((crc ^ 0xFFFFFFFF) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  } catch (e) {
+    console.error('[CRC32] Failed to hash:', filePath, e.message);
+    return null;
+  }
 }
 
 // ── ROM discovery ──────────────────────────────────────────────────────────

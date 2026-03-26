@@ -92,5 +92,16 @@
     "mupen64plus_next is recommended accurate N64 core",
     "⚠️ Verify balloon and lap addresses with RetroArch memory viewer on first run",
     "Everyone has played this — maximum buy-in from players"
-  ]
+  ],
+  "genre": "Racing",
+  "year": "1996",
+  "publisher": "Nintendo",
+  "players_supported": "1-4",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/mario-kart-64.png",
+  "rom_hashes": {
+    "crc32": "2BCEE11C"
+  }
 }

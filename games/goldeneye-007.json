@@ -88,5 +88,16 @@
   ],
   "rom_name": "GoldenEye 007 (USA).z64",
   "name": "GoldenEye 007",
-  "system": "n64"
+  "system": "n64",
+  "genre": "FPS",
+  "year": "1997",
+  "publisher": "Rare/Nintendo",
+  "players_supported": "1-4",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/goldeneye-007-n64.png",
+  "rom_hashes": {
+    "crc32": "B6330846"
+  }
 }

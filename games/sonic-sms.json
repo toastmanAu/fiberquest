@@ -69,5 +69,17 @@
     "Score is 4 bytes big-endian at 0xD2BA",
     "genesis_plus_gx handles both Mega Drive and Master System ROMs",
     "ROM extension is .sms for Master System"
-  ]
+  ],
+  "genre": "Platformer",
+  "year": "1991",
+  "publisher": "Sega",
+  "players_supported": "1",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/sonic-sms.png",
+  "rom_hashes": {
+    "crc32": "BC482BAA"
+  }
 }

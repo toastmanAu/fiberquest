@@ -52,5 +52,17 @@
   ],
   "rom_name": "Super Mario Bros. 3 (USA).nes",
   "name": "Super Mario Bros. 3",
-  "system": "nes"
+  "system": "nes",
+  "genre": "Platformer",
+  "year": "1988",
+  "publisher": "Nintendo",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/super-mario-bros-3-nes.png",
+  "rom_hashes": {
+    "crc32": "1ABBE2A4"
+  }
 }

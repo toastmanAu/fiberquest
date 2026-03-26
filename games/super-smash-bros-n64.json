@@ -67,5 +67,13 @@
     "KO count derived from stock decrements — no separate KO counter address needed",
     "Recommend disabling items for competitive play",
     "ROM extension .z64 (big-endian) or .n64 (little-endian) — both work with mupen64plus_next"
-  ]
+  ],
+  "genre": "Fighting",
+  "year": "1999",
+  "publisher": "Nintendo/HAL",
+  "players_supported": "1-4",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/super-smash-bros-n64.png"
 }

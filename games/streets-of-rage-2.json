@@ -110,5 +110,17 @@
     "Lives address 0xFFEF83 confirmed via Action Replay cheat codes (libretro-database)",
     "Score addresses 0xFFEF96-98 sourced from community RAM map — verify with RetroArch memory viewer on first run",
     "genesis_plus_gx is the recommended accurate core for Mega Drive"
-  ]
+  ],
+  "genre": "Beat-em-up",
+  "year": "1992",
+  "publisher": "Sega",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/streets-of-rage-2.png",
+  "rom_hashes": {
+    "crc32": "BE36C4FB"
+  }
 }

@@ -210,5 +210,14 @@
     },
     "cell_data_version": 1
   },
-  "rom_name": "Super Mario Bros. (World).nes"
+  "rom_name": "Super Mario Bros. (World).nes",
+  "genre": "Platformer",
+  "year": "1985",
+  "publisher": "Nintendo",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/super-mario-bros.png"
 }

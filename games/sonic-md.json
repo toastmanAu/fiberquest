@@ -52,5 +52,17 @@
   ],
   "rom_name": "Sonic The Hedgehog (USA, Europe).md",
   "name": "Sonic the Hedgehog",
-  "system": "megadrive"
+  "system": "megadrive",
+  "genre": "Platformer",
+  "year": "1991",
+  "publisher": "Sega",
+  "players_supported": "1",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/sonic-the-hedgehog-md.png",
+  "rom_hashes": {
+    "crc32": "AC400F6A"
+  }
 }

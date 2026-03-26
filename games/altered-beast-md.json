@@ -66,5 +66,16 @@
   ],
   "rom_name": "Altered Beast (USA, Europe).md",
   "name": "Altered Beast",
-  "system": "megadrive"
+  "system": "megadrive",
+  "genre": "Beat-em-up",
+  "year": "1988",
+  "publisher": "Sega",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/altered-beast-md.png",
+  "rom_hashes": {
+    "crc32": "EEDDE12F"
+  }
 }

@@ -49,5 +49,17 @@
     "Money acts as the primary score metric in this game",
     "Iconic SMS title — good nostalgia factor for tournament",
     "Built into original SMS BIOS — everyone recognises it"
-  ]
+  ],
+  "genre": "Platformer",
+  "year": "1986",
+  "publisher": "Sega",
+  "players_supported": "1",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/alex-kidd.png",
+  "rom_hashes": {
+    "crc32": "BB7145C4"
+  }
 }

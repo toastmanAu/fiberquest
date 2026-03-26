@@ -43,5 +43,14 @@
     "MAME cheat XML database is the best source: https://www.mamecheat.co.uk/",
     "FBNeo core handles Pac-Man well — confirmed in libretro-database",
     "Universally recognised — strongest nostalgia factor of any game"
-  ]
+  ],
+  "genre": "Arcade",
+  "year": "1980",
+  "publisher": "Namco",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/pac-man-arcade.png"
 }

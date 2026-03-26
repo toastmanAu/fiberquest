@@ -39,5 +39,16 @@
     "SMS Action Replay format: 00C4-88XX = address 0xC488, value 0xXX",
     "Blood code: At title screen: Up, Up, Down, Down, Left, Right, Left, Right",
     "Backup option if SNES MK ROM not available — same game concept"
-  ]
+  ],
+  "genre": "Fighting",
+  "year": "1993",
+  "publisher": "Arena/Midway",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/mortal-kombat-sms.png",
+  "rom_hashes": {
+    "crc32": "792D1395"
+  }
 }

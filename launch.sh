@@ -4,7 +4,7 @@
 # Usage: ./launch.sh [game_id]
 # If no game_id given, shows menu.
 
-CORES_DIR="$HOME/.config/retroarch/cores"
+CORES_DIR="$HOME/.var/app/org.libretro.RetroArch/config/retroarch/cores"
 GAMES_DIR="$HOME/fiberquest/games"
 ROMS_BASE="$HOME/roms"
 XAUTH="/run/user/1000/gdm/Xauthority"
@@ -138,7 +138,7 @@ launch_game() {
     exit 1
   fi
 
-  pkill retroarch 2>/dev/null
+  pkill -f 'retroarch' 2>/dev/null
   sleep 1
 
   echo ""
@@ -154,7 +154,7 @@ launch_game() {
   export DISPLAY="$DISPLAY_ENV"
   export XAUTHORITY="$XAUTH"
 
-  retroarch -L "$core_path" "$rom_resolved" > "$LOG" 2>&1 &
+  flatpak run org.libretro.RetroArch -L "$core_path" "$rom_resolved" > "$LOG" 2>&1 &
   local RA_PID=$!
   echo "  PID: $RA_PID"
 
@@ -206,7 +206,7 @@ except: sys.exit(1)
   echo "  Poller log:     ssh $PI_HOST 'tail -f /tmp/ram-poller-${game_id}.log'"
   echo "  RetroArch log:  tail -f $LOG"
   echo ""
-  echo "  Stop all:       pkill retroarch; ssh $PI_HOST 'pkill -f ram-logger'"
+  echo "  Stop all:       pkill -f retroarch; ssh $PI_HOST 'pkill -f ram-logger'"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 

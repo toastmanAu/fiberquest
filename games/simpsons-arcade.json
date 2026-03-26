@@ -54,5 +54,16 @@
   ],
   "rom_name": "simpsons.zip",
   "name": "The Simpsons (Arcade)",
-  "system": "arcade"
+  "system": "arcade",
+  "genre": "Beat-em-up",
+  "year": "1991",
+  "publisher": "Konami",
+  "players_supported": "1-4",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/simpsons-arcade.png",
+  "rom_hashes": {
+    "crc32": "6DB30142"
+  }
 }

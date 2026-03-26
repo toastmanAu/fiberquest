@@ -37,5 +37,16 @@
   ],
   "rom_name": "Clay Fighter 2 - Judgement Clay (USA).sfc",
   "name": "ClayFighter 2: Judgment Clay",
-  "system": "snes"
+  "system": "snes",
+  "genre": "Fighting",
+  "year": "1994",
+  "publisher": "Interplay",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/clay-fighter-2-snes.png",
+  "rom_hashes": {
+    "crc32": "20B5C364"
+  }
 }

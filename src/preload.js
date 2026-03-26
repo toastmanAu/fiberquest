@@ -44,7 +44,8 @@ contextBridge.exposeInMainWorld('fiberquest', {
   },
   // Games
   games: {
-    list: () => ipcRenderer.invoke('games:list'),
+    list:      () => ipcRenderer.invoke('games:list'),
+    verifyRom: (gameId) => ipcRenderer.invoke('games:verifyRom', gameId),
   },
   // RetroArch
   retroarch: {

@@ -44,5 +44,13 @@
   ],
   "rom_name": "Double Dragon (USA).nes",
   "name": "Double Dragon",
-  "system": "nes"
+  "system": "nes",
+  "genre": "Beat-em-up",
+  "year": "1988",
+  "publisher": "Technos Japan",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/double-dragon-nes.png"
 }

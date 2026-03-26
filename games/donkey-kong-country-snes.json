@@ -5,7 +5,6 @@
   "rom_name": "Donkey Kong Country.zip",
   "core": "/home/phill/.var/app/org.libretro.RetroArch/config/retroarch/cores/snes9x_libretro.so",
   "description": "Classic platformer — collect bananas, KONG letters, and survive. Lives + bananas = score.",
-
   "ram_addresses": {
     "p1_lives": {
       "address": "0x7E0575",
@@ -26,28 +25,35 @@
       "notes": "Number of levels completed this session. Verified live 2026-03-25."
     }
   },
-
   "events": [
     {
       "id": "life_gained",
       "description": "Extra life collected (balloon or 100 bananas)",
-      "trigger": { "address": "p1_lives", "condition": "changed" },
+      "trigger": {
+        "address": "p1_lives",
+        "condition": "changed"
+      },
       "payment": null
     },
     {
       "id": "banana_collected",
       "description": "Banana count changed",
-      "trigger": { "address": "p1_bananas", "condition": "changed" },
+      "trigger": {
+        "address": "p1_bananas",
+        "condition": "changed"
+      },
       "payment": null
     },
     {
       "id": "level_complete",
       "description": "Level completed",
-      "trigger": { "address": "levels_complete", "condition": "changed" },
+      "trigger": {
+        "address": "levels_complete",
+        "condition": "changed"
+      },
       "payment": null
     }
   ],
-
   "tournament_modes": [
     {
       "id": "timed_score_5",
@@ -77,7 +83,6 @@
       "score_formula": "levels_complete * 1000 + p1_lives"
     }
   ],
-
   "confidence": "high",
   "notes": [
     "SNES WRAM addresses verified live on Pi 5 (aarch64) with patched snes9x core",
@@ -89,5 +94,17 @@
   ],
   "sources": [
     "Live verification via FiberQuest RAM scanner 2026-03-25"
-  ]
+  ],
+  "genre": "Platformer",
+  "year": "1994",
+  "publisher": "Nintendo/Rare",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/donkey-kong-country-snes.png",
+  "rom_hashes": {
+    "crc32": "57D399EF"
+  }
 }

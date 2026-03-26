@@ -65,5 +65,13 @@
   ],
   "rom_name": "Golden Axe (USA, Europe).md",
   "name": "Golden Axe",
-  "system": "megadrive"
+  "system": "megadrive",
+  "genre": "Beat-em-up",
+  "year": "1989",
+  "publisher": "Sega",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local"
+  ],
+  "box_art": "box-art/golden-axe-md.png"
 }

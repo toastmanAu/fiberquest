@@ -109,7 +109,7 @@
       {
         "id": "time_limit",
         "label": "Most Rounds Won",
-        "description": "Play for a set duration \u2014 most rounds won at the end wins the pot",
+        "description": "Play for a set duration — most rounds won at the end wins the pot",
         "metric": "rounds_won",
         "requires": [
           "duration_seconds"
@@ -194,5 +194,14 @@
     },
     "cell_data_version": 1
   },
-  "rom_name": "sf2turb.zip"
+  "rom_name": "sf2turb.zip",
+  "genre": "Fighting",
+  "year": "1993",
+  "publisher": "Capcom",
+  "players_supported": "1-2",
+  "tournament_types": [
+    "local",
+    "distributed"
+  ],
+  "box_art": "box-art/sf2-turbo.png"
 }
