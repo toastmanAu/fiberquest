@@ -1030,7 +1030,7 @@
 
         <div class="filter-chips" id="browse-filters">
           <button class="chip active" data-filter="ALL"       onclick="setBrowseFilter('ALL')">ALL</button>
-          <button class="chip"        data-filter="ESCROW"    onclick="setBrowseFilter('ESCROW')">OPEN</button>
+          <button class="chip"        data-filter="OPEN"      onclick="setBrowseFilter('OPEN')">OPEN</button>
           <button class="chip"        data-filter="ACTIVE"    onclick="setBrowseFilter('ACTIVE')">LIVE</button>
           <button class="chip"        data-filter="SETTLING"  onclick="setBrowseFilter('SETTLING')">SETTLING</button>
           <button class="chip"        data-filter="COMPLETE"  onclick="setBrowseFilter('COMPLETE')">COMPLETE</button>
@@ -2396,8 +2396,10 @@ const _browseCache = { tournaments: [], lastFetch: 0, fetching: false };
 let   _browseFilter = 'ALL';
 
 const _stateColor = s => ({
+  OPEN:      'var(--green)',
   ESCROW:    'var(--green)',
-  FUNDING:   'var(--green)',
+  FUNDED:    'var(--cyan)',
+  FUNDING:   'var(--cyan)',
   ACTIVE:    'var(--yellow)',
   SETTLING:  'var(--red)',
   COMPLETE:  'var(--muted)',
@@ -2405,8 +2407,10 @@ const _stateColor = s => ({
 })[s] || 'var(--muted)';
 
 const _stateLabel = s => ({
+  OPEN:      'OPEN',
   ESCROW:    'OPEN',
-  FUNDING:   'FUNDING',
+  FUNDED:    'FUNDED',
+  FUNDING:   'FUNDED',
   ACTIVE:    'LIVE',
   SETTLING:  'SETTLING',
   COMPLETE:  'DONE',
@@ -2521,7 +2525,7 @@ function renderBrowseList() {
         ${t.tournamentMode === 'distributed' ? `<div><span class="t-detail-label">Type: </span><span style="color:var(--purple)">DISTRIBUTED</span></div>` : ''}
         ${t.winner ? `<div><span class="t-detail-label">Winner: </span><span style="color:var(--yellow)">${t.winner}</span></div>` : ''}
         ${playerRows ? `<div style="margin-top:var(--sp-xs);color:var(--muted)">PLAYERS</div>${playerRows}` : ''}
-        ${t.state === 'ESCROW' && t.tournamentMode === 'distributed' ? `<button class="btn" style="margin-top:var(--sp-sm);width:100%" onclick="event.stopPropagation();joinDistributedTournament('${t.id}')">JOIN TOURNAMENT</button>` : ''}
+        ${(t.state === 'ESCROW' || t.state === 'OPEN') && t.tournamentMode === 'distributed' ? `<button class="btn" style="margin-top:var(--sp-sm);width:100%" onclick="event.stopPropagation();joinDistributedTournament('${t.id}')">JOIN TOURNAMENT</button>` : ''}
         ${t.state === 'ESCROW' && (!t.tournamentMode || t.tournamentMode === 'local') ? `<button class="btn muted" style="margin-top:var(--sp-sm);width:100%" onclick="event.stopPropagation()">LOCAL ONLY</button>` : ''}
       </div>
     </div>`;
