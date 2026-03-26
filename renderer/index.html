@@ -1820,8 +1820,9 @@ function showWaitingRoom() {
   const n = t.playerCount || t.maxPlayers || 2;
   document.getElementById('tourId').textContent     = `ID: ${t.id}`;
   const isDistributed = t.tournamentMode === 'distributed';
+  const registered = t.registeredPlayers || (t.players?.length) || 0;
   document.getElementById('waitStatus').textContent = isDistributed
-    ? `Distributed — ${n} players needed. Share tournament ID or wait for chain join.`
+    ? `${registered}/${n} registered — waiting for players...`
     : `Waiting for ${n} players...`;
 
   // Show block countdown bar for distributed tournaments

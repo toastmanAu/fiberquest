@@ -1741,6 +1741,8 @@ class Tournament extends EventEmitter {
       mode:           this.mode?.name,
       entryFee:       this.entryFee,
       maxPlayers:     this.maxPlayers,
+      playerCount:    this.playerCount,
+      registeredPlayers: this.registeredPlayers || Object.keys(this.players).length,
       tournamentMode: this.tournamentMode,
       players:    Object.entries(this.players).map(([id, p]) => ({
                     id, name: p.name, paid: p.paid, score: p.score
@@ -1749,6 +1751,12 @@ class Tournament extends EventEmitter {
       startedAt:  this._startedAt,
       elapsedMs:  this._startedAt ? Date.now() - this._startedAt : 0,
       timeLimitMs: this.timeLimitMs,
+      // v0.3.0 block fields
+      entryCutoffBlock: this.entryCutoffBlock,
+      startBlock:       this.startBlock,
+      endBlock:         this.endBlock,
+      durationBlocks:   this.durationBlocks,
+      startMode:        this.startMode,
     };
   }
 }
