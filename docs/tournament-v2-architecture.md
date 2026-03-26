@@ -187,10 +187,117 @@ Block N+190:    TC → COMPLETE, channels closing
 
 ---
 
-## Open Questions
+## Agent Wallet UX
 
-1. **Fiber channel open time:** How long does it take to open a channel + fund it? This affects the gap needed between cutoff and start blocks.
-2. **Routing:** Can TM pay winner via multi-hop Fiber route, or must it be direct channel?
-3. **Channel capacity:** Entry fee = channel funding. Minimum channel size on Fiber?
-4. **Force-close timeout:** What's the default Fiber force-close delay? Affects dispute resolution time.
-5. **Agent hash scope:** What exactly should be hashed? Full codebase vs just tournament-manager.js + ram-engine.js?
+The agent's private key generates both an L1 CKB address and an implicit Fiber wallet. To the user, this appears as a single "gaming wallet" they top up and maintain a float in.
+
+### Wallet Page (new view in FiberQuest UI)
+- **Total balance:** L1 cells + Fiber channel balances combined
+- **Available:** L1 CKB ready for new tournaments / channel funding
+- **In channels:** CKB locked in active Fiber channel escrows
+- **Suggested float:** Calculated from typical entry fee + cell operation costs
+- **History:** Tournament entries, payouts, channel opens/closes, cell creates/consumes
+- **Top up:** JoyID deposit (existing flow)
+
+### How it works
+- User tops up agent wallet via JoyID (L1 deposit)
+- Agent autonomously manages:
+  - Creating intent cells (registration)
+  - Opening/funding Fiber channels (entry fee escrow)
+  - Creating score cells (result submission)
+  - Consuming cells when no longer needed (reclaim CKB)
+- User never manually manages cells or channels
+- Suggested float: `(typical_entry_fee × 2) + (cell_costs × 5)` — enough for 2 concurrent tournaments with headroom
+
+### Setup
+- One-time: "Generate Agent Wallet" or "Import Key" in settings
+- After setup, wallet tab is the primary interface
+- Agent PK derives both secp256k1 lock (L1) and Fiber node identity
+
+---
+
+## Validation Against CKB Docs — Holes & Issues Found
+
+### Issue 1: Intent Cell Capacity Is NOT Minimal
+Doc says "Minimum: 61 CKBytes for an empty cell." But our intent cell has:
+- Lock script: ~53 bytes (secp256k1)
+- Type script: ~65 bytes (code_hash + hash_type + args)
+- Data: ~200 bytes (tournament ID, address, peer ID, code hash)
+- **Total: ~380 bytes = ~380 CKB locked just to signal intent**
+
+This isn't "minimal" — it's significant. PA gets it back when they consume it, but they need 380 CKB upfront *on top of* their entry fee. The agent float needs to account for this.
+
+**Mitigation:** Factor into suggested float calculation. Intent cell CKB is fully reclaimable.
+
+### Issue 2: TC Rewrite Race Condition
+If TM tries to batch-rewrite the TC but the outpoint was already consumed by a prior rewrite (e.g., two rewrites in quick succession), the tx will fail with "dead cell."
+
+**Mitigation:** TM must handle `OutPointAlreadySpent` errors and retry with fresh outpoint from `scanTournaments()`. Standard CKB pattern — retry on stale outpoint.
+
+### Issue 3: Fiber Channel Funding Is Two L1 Transactions
+PA flow: consume intent cell (tx 1) → CKB to wallet → open_channel (tx 2, funding tx on-chain). Each needs ~10s block confirmation. Total: ~20-30s per channel.
+
+**Mitigation:** All PAs open channels in parallel (not sequential). Gap between cutoffBlock and startBlock needs to be at least ~30 blocks (~5 min) to allow all channels to confirm.
+
+### Issue 4: Payout Routing — The Channel Balance Problem
+This is the biggest hole. After entry fee payments:
+- TM has 100 CKB on TM-side of each channel
+- But Fiber channels are point-to-point
+- TM can only send CKB *back through the same channel* to the same PA
+- TM cannot directly move Player B's entry fee to Player A
+
+**Options:**
+a) **Multi-hop routing**: If Fiber supports routing payments through TM (A→TM→B), TM could route the payout. But the direction is wrong — we need TM→Winner, using funds from Loser's channel.
+b) **TM closes losing channels first (L1)**: Close loser channels → CKB returns to TM's L1 wallet → TM sends L1 payment to winner. Slower but guaranteed.
+c) **Pre-funded TM**: TM maintains a Fiber float. TM pays winner from its own balance immediately, then recoups from closing loser channels later. Requires TM to have liquidity.
+d) **Dual-funded channels**: Both TM and PA fund the channel. TM pre-loads its side with enough to cover potential payout. Complex.
+
+**Recommended: Option C (pre-funded TM)** — TM needs a Fiber float >= max_payout. For a 4-player × 100 CKB tournament, TM needs 400 CKB in Fiber liquidity. TM pays winner immediately, then recoups by closing loser channels. This is the Lightning Network "hub" model.
+
+### Issue 5: What If PA Doesn't Open Channel After Registration?
+TM registered them on TC but they never funded the channel. Tournament can't start with unfunded players.
+
+**Mitigation:** TC tracks `channelFunded: true/false` per player. At cutoffBlock, TM checks all registered players have funded channels. Unfunded players are removed. If remaining players < required, cancel tournament.
+
+### Issue 6: Score Cell Spam / Fake Scores
+Any agent can write a score cell with a fake tournament ID. Type script alone doesn't prevent this — anyone can create a cell with any type script.
+
+**Mitigation:** TM validates score cells by checking:
+- Player address matches a registered player on TC
+- Tournament ID matches
+- Score cell created after endBlock (not during or before game)
+- Agent code hash matches (if stored in score cell)
+
+The type script can enforce the block timing constraint (using `since` field).
+
+### Issue 7: Time Between Cutoff and Start Must Account For Channel Opens
+Block timeline currently shows:
+```
+N+50:     entryCutoffBlock
+N+50..70: Fiber channels opening
+N+70:     startBlock
+```
+20-block gap (~3 min) might be tight if channels need 2 L1 txs each. Should be 30-50 blocks (~5-8 min).
+
+### Issue 8: TC Data Size Grows With Players
+Each player entry adds ~150 bytes to TC data. 10 players = 1.5KB extra. TC needs capacity to accommodate max players from creation.
+
+**Mitigation:** Creator's setup fee must pre-fund TC capacity for worst case (all slots filled). Calculate: base TC data + (playerCount × per_player_bytes). This goes into the invoice breakdown.
+
+---
+
+## Resolved Open Questions
+
+1. **Fiber channel open time:** ~20-30s (2 L1 txs: intent consume + channel funding). Parallel for all PAs. Need 30-50 block gap between cutoff and start.
+2. **Routing:** Direct channels only for now. TM needs pre-funded Fiber float to pay winners. Recoups from closing loser channels.
+3. **Channel capacity:** Entry fee = minimum. Fiber may have its own minimum (check Fiber docs). Agent float handles the rest.
+4. **Force-close timeout:** Fiber default TBD — check Fiber source. Affects dispute window.
+5. **Agent hash scope:** Hash tournament-manager.js + ram-engine.js + game definition JSON. Excludes UI/config. Deterministic inputs to the scoring function.
+
+## Still Open
+
+1. **Minimum Fiber channel size** — need to check Fiber source for `min_channel_capacity`
+2. **Fiber force-close timeout** — need to check Fiber source for default `to_self_delay`
+3. **TM liquidity requirement** — how much Fiber float does TM need? Proportional to max concurrent tournaments × max payout
+4. **Intent cell type script** — write custom, use always-success, or use existing pattern?
+5. **Score cell timing enforcement** — can `since` field enforce "only after endBlock"?
