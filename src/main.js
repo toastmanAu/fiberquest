@@ -618,7 +618,13 @@ function setupTournamentIPC() {
     }
     // Link session logger to tournament
     if (activeSession) activeSession.linkTournament(t.id);
-    tournamentManager.startPaymentPolling(3000);
+
+    // v0.3.0: distributed tournaments use block-aware polling, not Fiber invoice polling
+    if (merged.tournamentMode === 'distributed' && blockTracker) {
+      t.startDistributedPolling(blockTracker);
+    } else {
+      tournamentManager.startPaymentPolling(3000);
+    }
     return t.status();
   });
 
@@ -727,38 +733,62 @@ function setupTournamentIPC() {
     let chainStore = tournamentManager.chainStore;
     if (!chainStore) {
       const { ChainStore } = require('./chain-store');
-      chainStore = new ChainStore({ rpcUrl: CONFIG.ckbRpcUrl });
+      chainStore = new ChainStore({ rpcUrl: CONFIG.ckbRpcUrl, wallet: agentWallet });
     }
     const cells = await chainStore.scanTournaments(tournamentId);
     if (!cells.length) throw new Error('Tournament not found on chain: ' + tournamentId);
     const cell = cells[0];
 
-    // Determine slot index — count existing deposits on organizer's cells to find next slot
-    const { depositDataMarker } = require('./agent-wallet');
-    let mySlotIndex = 0;
-    if (agentWallet) {
-      // Scan organizer's cells for existing deposit markers to find next open slot
-      // We can't scan remote cells, so count based on chain cell player count
-      mySlotIndex = (cell.players || []).length;  // next slot after existing players
-    }
-    // Fallback: use maxPlayers - 1 (last slot) if we can't determine
-    if (mySlotIndex === 0 && cell.maxPlayers > 1) mySlotIndex = 1;
-    console.log(`[Main] Joining as slot ${mySlotIndex} (${(cell.players || []).length} existing players on chain)`);
+    console.log(`[Main] Joining tournament ${tournamentId} — ${cell.registeredPlayers || 0}/${cell.playerCount || cell.maxPlayers} players`);
 
-    // Create a local tournament mirror from on-chain data (skip escrow — we're joining, not creating)
+    // v0.3.0: Create intent cell on-chain to signal join interest
+    // TM will discover this and register us on the TC
+    if (agentWallet) {
+      let fiberPeerId = '';
+      try {
+        const info = await fiberClient.getNodeInfo();
+        fiberPeerId = info?.node_id || '';
+      } catch (_) {}
+
+      // Generate agent code hash (deterministic)
+      const crypto = require('crypto');
+      const tmCode = fs.readFileSync(path.join(__dirname, 'tournament-manager.js'), 'utf8');
+      const reCode = fs.readFileSync(path.join(__dirname, 'ram-engine.js'), 'utf8');
+      const agentCodeHash = 'sha256:' + crypto.createHash('sha256').update(tmCode + reCode).digest('hex').slice(0, 16);
+
+      console.log(`[Main] Creating intent cell (peer: ${fiberPeerId.slice(0, 16)}..., hash: ${agentCodeHash})`);
+      const intentResult = await chainStore.createIntentCell(agentWallet, tournamentId, {
+        playerAddress: agentWallet.address,
+        fiberPeerId,
+        agentCodeHash,
+        createdAtBlock: blockTracker?.tipHeader?.number || null,
+      });
+      console.log(`[Main] Intent cell created: ${intentResult.txHash}`);
+    }
+
+    // Create local tournament mirror from on-chain data
+    const mySlotIndex = (cell.players || []).length;
     const t = await tournamentManager.create({
       id:               cell.id,
       gameId:           cell.gameId,
       mode:             cell.modeId,
       entryFee:         cell.entryFee,
-      players:          cell.maxPlayers,
+      players:          cell.playerCount || cell.maxPlayers,
+      playerCount:      cell.playerCount || cell.maxPlayers,
       timeLimitMinutes: cell.timeLimitMinutes,
       currency:         cell.currency,
       tournamentMode:   'distributed',
       myPlayerId:       myPlayerId,
       mySlotIndex:      mySlotIndex,
       skipEscrow:       true,
+      _joinedDistributed: true,
       organizerAddress: cell.organizerAddress,
+      // v0.3.0 block fields from chain cell
+      entryCutoffBlock: cell.entryCutoffBlock,
+      startBlock:       cell.startBlock,
+      endBlock:         cell.endBlock,
+      durationBlocks:   cell.durationBlocks,
+      startMode:        cell.startMode || 'block',
     });
     t._organizerAddress = cell.organizerAddress;
 
@@ -767,14 +797,11 @@ function setupTournamentIPC() {
       t._sharedRamEngine = activeRamEngine;
     }
 
-    // Auto-register this player with the correct slot index
-    await t.addPlayer(myPlayerId, myName, { slotIndex: mySlotIndex });
-    console.log(`[Main] Auto-registered ${myName} at slot ${mySlotIndex}`);
-
-    // Start block-aware chain polling for state changes
+    // Don't call addPlayer — TM will register us when it finds our intent cell
+    // Just start polling for state changes
     t.startDistributedPolling(blockTracker);
-    console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId} slot ${mySlotIndex} (organizer: ${cell.organizerAddress?.slice(0,30)}...)`);
-    return { ...t.status(), organizerAddress: cell.organizerAddress };
+    console.log(`[Main] Joined distributed tournament ${tournamentId} — intent cell submitted, waiting for TM registration`);
+    return { ...t.status(), organizerAddress: cell.organizerAddress, intentSubmitted: true };
   });
 }
 

@@ -2540,14 +2540,20 @@ function toggleTCard(i) {
 async function joinDistributedTournament(tournamentId) {
   retroLog(`Attempting to join ${tournamentId}...`, 'info');
   const playerName = 'Player-' + Math.random().toString(36).slice(2, 6);
-  const playerId = 'player-0';  // Use player-0 so UI slot matches
+  const playerId = 'player-0';
   try {
-    retroLog(`Joining distributed tournament as ${playerName}...`, 'info');
+    retroLog(`Submitting intent cell to join ${tournamentId}...`, 'info');
     currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
-    retroLog(`Joined! Tournament: ${tournamentId}`, 'ok');
-    // Player already registered — show waiting room with slot pre-filled
+
+    if (currentTournament.intentSubmitted) {
+      retroLog('Intent cell submitted — waiting for TM to register you', 'ok');
+    } else {
+      retroLog(`Joined tournament: ${tournamentId}`, 'ok');
+    }
+
     showWaitingRoom();
-    // Mark slot as already added so addPlayerName doesn't double-register
+
+    // v0.3.0: show intent status instead of payment flow
     setTimeout(() => {
       const nameInput = document.getElementById('name-0');
       const btn = document.querySelector('#step-name-0 .slot-button');
@@ -2556,14 +2562,15 @@ async function joinDistributedTournament(tournamentId) {
         nameInput.disabled = true;
       }
       if (btn) {
-        btn.textContent = 'ADDED';
+        btn.textContent = 'INTENT SENT';
         btn.disabled = true;
       }
+      const st = document.getElementById('status-0');
+      if (st) {
+        st.textContent = 'Intent cell on-chain — waiting for TM to register...';
+        st.style.color = 'var(--cyan)';
+      }
       document.getElementById('slot-0')?.classList.add('active');
-      // Go straight to JoyID connect — player already registered on backend
-      window.fiberquest.tournament.connectPlayer(currentTournament.id, playerId)
-        .then(() => retroLog('JoyID connect triggered', 'info'))
-        .catch(e => retroLog('Connect failed: ' + e.message, 'error'));
     }, 500);
   } catch (e) {
     retroLog('Join failed: ' + (e.message || e), 'error');
