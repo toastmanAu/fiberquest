@@ -83,6 +83,10 @@ contextBridge.exposeInMainWorld('fiberquest', {
     scan:      () => ipcRenderer.invoke('chain:scan'),
     blockInfo: () => ipcRenderer.invoke('chain:blockInfo'),
   },
+  // Wallet (v0.3.0)
+  wallet: {
+    info: () => ipcRenderer.invoke('wallet:info'),
+  },
   // QR code generation
   qr: {
     generate: (text) => ipcRenderer.invoke('qr:generate', text),

@@ -338,6 +338,13 @@ function setupIPC() {
     return blockTracker ? blockTracker.getInfo() : null;
   });
 
+  // Wallet info (v0.3.0)
+  ipcMain.handle('wallet:info', async () => {
+    const wallet = tournamentManager?.wallet;
+    if (!wallet) return null;
+    return wallet.getWalletInfo();
+  });
+
   ipcMain.handle('chain:scan', async () => {
     try {
       // Chain scan only needs CKB RPC, not a wallet — create a read-only chain store if needed
