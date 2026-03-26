@@ -840,8 +840,9 @@ function setupTournamentIPC() {
       t._sharedRamEngine = activeRamEngine;
     }
 
-    // Don't call addPlayer — TM will register us when it finds our intent cell.
-    // Intent cell created AFTER user pays via JoyID (fundAgent → player_paid).
+    // Register player locally so fundAgentForEntry can find them.
+    // TM will register us on-chain when it finds our intent cell.
+    await t.addPlayer(myPlayerId, myName, { slotIndex: mySlotIndex });
     t.on('player_paid', async (ev) => {
       console.log(`[Main] Player paid — creating intent cell now...`);
       if (!agentWallet || !chainStore) return;
