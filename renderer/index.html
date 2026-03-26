@@ -2392,11 +2392,15 @@ function handleTournamentEvent(ev) {
       break;
     }
     case 'player_registered': {
-      waitingStatus(`Player registered: ${ev.address?.slice(0, 20) || ev.playerId}`, 'cyan');
-      retroLog(`Player registered: ${ev.address?.slice(0, 20) || ev.playerId}`, 'info');
-      const ws = document.getElementById('waitStatus');
+      // Update local count
+      if (currentTournament) {
+        currentTournament.registeredPlayers = (currentTournament.registeredPlayers || 0) + 1;
+      }
       const registered = currentTournament?.registeredPlayers || '?';
       const total = currentTournament?.playerCount || currentTournament?.maxPlayers || '?';
+      waitingStatus(`Player registered (${registered}/${total}): ${ev.address?.slice(0, 20) || ev.playerId}`, 'cyan');
+      retroLog(`Player registered: ${ev.address?.slice(0, 20) || ev.playerId} (${registered}/${total})`, 'info');
+      const ws = document.getElementById('waitStatus');
       if (ws) ws.textContent = `${registered}/${total} registered`;
       break;
     }
