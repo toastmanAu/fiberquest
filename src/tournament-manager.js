@@ -1799,14 +1799,35 @@ class TournamentManager extends EventEmitter {
 
   async _writeTournamentCell(t) {
     let fiberPeerId = '';
+    let fiberAddress = '';
     try {
       const info = await this.fiber.getNodeInfo();
       fiberPeerId = info.node_id || '';
+      // Get listen address — node may not advertise it, so construct from config
+      if (info.addresses?.length) {
+        fiberAddress = info.addresses[0]?.address || info.addresses[0] || '';
+      }
+      // If no address advertised, try to construct from local network info
+      if (!fiberAddress) {
+        const os = require('os');
+        for (const iface of Object.values(os.networkInterfaces())) {
+          for (const addr of iface) {
+            if (addr.family === 'IPv4' && !addr.internal) {
+              // Default Fiber P2P port — read from node config or use 8228
+              fiberAddress = `/ip4/${addr.address}/tcp/8230`;
+              break;
+            }
+          }
+          if (fiberAddress) break;
+        }
+      }
+      console.log(`[TournamentManager] Fiber: peer=${fiberPeerId.slice(0,16)}... addr=${fiberAddress}`);
     } catch (_) {}
 
     const chainData = {
       ...t._chainData(),
       fiberPeerId,
+      fiberAddress,
       playerCount:      t.playerCount || t.maxPlayers || 2,
       registeredPlayers: t.registeredPlayers || 0,
       entryCutoffBlock: t.entryCutoffBlock || null,
