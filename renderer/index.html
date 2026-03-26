@@ -2046,11 +2046,21 @@ async function fiberDetect() {
       applyBtn.style.display = 'inline-block';
       startBtn.style.display = 'none';
     } else if (best.installed) {
-      banner.style.color = 'var(--yellow)';
-      banner.textContent = `⚠ Fiber node installed but not running — ${best.rpcUrl}`;
-      hint.textContent = 'Start the service to activate.';
-      applyBtn.style.display = 'none';
-      startBtn.style.display = best.service ? 'inline-block' : 'none';
+      // Check if we already have a working Fiber connection before warning
+      const fiberOnline = document.getElementById('svc-fiber')?.classList.contains('online');
+      if (fiberOnline) {
+        banner.style.color = 'var(--green)';
+        banner.textContent = `✅ Fiber node connected (configured endpoint)`;
+        hint.textContent = `Also found installed node at ${best.rpcUrl} (not reachable via auto-detect).`;
+        applyBtn.style.display = 'none';
+        startBtn.style.display = 'none';
+      } else {
+        banner.style.color = 'var(--yellow)';
+        banner.textContent = `⚠ Fiber node installed but not running — ${best.rpcUrl}`;
+        hint.textContent = 'Start the service to activate.';
+        applyBtn.style.display = 'none';
+        startBtn.style.display = best.service ? 'inline-block' : 'none';
+      }
     }
 
     // Populate node info panel
