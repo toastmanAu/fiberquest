@@ -1357,7 +1357,7 @@ class Tournament extends EventEmitter {
         }
 
         // ── Block-scheduled start ───────────────────────────────────────
-        if (cell.startMode === 'block' && cell.startBlock && !this._distributedStarted) {
+        if (cell.startBlock && !this._distributedStarted) {
           if (header.number >= cell.startBlock) {
             this._distributedStarted = true;
             console.log(`[Tournament] Chain: startBlock ${cell.startBlock} reached at block ${header.number}`);
