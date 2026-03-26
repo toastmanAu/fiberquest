@@ -1054,15 +1054,19 @@
 
     <!-- Block countdown bar (distributed tournaments) -->
     <div id="blockCountdownBar" style="display:none;background:var(--surface);border:var(--border-w) solid var(--border);border-radius:var(--radius);padding:var(--sp-sm);margin-bottom:var(--sp-sm);text-align:center">
-      <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted)">
-        <span>CUTOFF</span>
-        <span>START</span>
-        <span>END</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--text);margin-top:2px">
-        <span id="blockCutoff">—</span>
-        <span id="blockStart">—</span>
-        <span id="blockEnd">—</span>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--sp-md);text-align:center">
+        <div>
+          <div style="font-size:calc(var(--fs-xs) - 1px);color:var(--muted)">CUTOFF</div>
+          <div style="font-size:var(--fs-xs);color:var(--text);font-family:monospace" id="blockCutoff">—</div>
+        </div>
+        <div>
+          <div style="font-size:calc(var(--fs-xs) - 1px);color:var(--muted)">START</div>
+          <div style="font-size:var(--fs-xs);color:var(--cyan);font-family:monospace" id="blockStart">—</div>
+        </div>
+        <div>
+          <div style="font-size:calc(var(--fs-xs) - 1px);color:var(--muted)">END</div>
+          <div style="font-size:var(--fs-xs);color:var(--text);font-family:monospace" id="blockEnd">—</div>
+        </div>
       </div>
       <div style="margin-top:var(--sp-xs)">
         <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
