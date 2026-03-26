@@ -970,23 +970,18 @@
           </select>
         </div>
 
-        <div class="form-row">
+        <div class="form-row" id="blockStartRow">
           <div class="form-group">
-            <label class="form-label">Start Mode</label>
-            <select class="form-control" id="startMode" onchange="toggleBlockStart()">
-              <option value="lightning">Lightning (instant)</option>
-              <option value="block">Block-Scheduled</option>
+            <label class="form-label">Start Delay (blocks)</label>
+            <select class="form-control" id="startDelayBlocks" onchange="updateBlockEstimate()">
+              <option value="10">10 blocks (~1.5 min)</option>
+              <option value="25">25 blocks (~4 min)</option>
+              <option value="50" selected>50 blocks (~8 min)</option>
+              <option value="100">100 blocks (~16 min)</option>
             </select>
           </div>
-          <div class="form-group" id="blockStartGroup" style="display:none">
-            <label class="form-label">Start Delay (blocks)</label>
-            <select class="form-control" id="startDelayBlocks">
-              <option value="10">10 blocks</option>
-              <option value="25">25 blocks</option>
-              <option value="50" selected>50 blocks</option>
-              <option value="100">100 blocks</option>
-            </select>
-            <div id="blockEstimate" style="font-size:var(--fs-xs);color:var(--cyan);margin-top:2px"></div>
+          <div class="form-group">
+            <div id="blockEstimate" style="font-size:var(--fs-xs);color:var(--cyan);margin-top:var(--sp-md)"></div>
           </div>
         </div>
 
@@ -1543,10 +1538,13 @@ function applyDefaultsToSetup(cfg) {
 
 // ── Block start mode UI ───────────────────────────────────
 function toggleBlockStart() {
-  const mode = document.getElementById('startMode').value;
-  document.getElementById('blockStartGroup').style.display = mode === 'block' ? '' : 'none';
-  if (mode === 'block') updateBlockEstimate();
+  const isDistributed = document.getElementById('tournamentType').value === 'distributed';
+  const row = document.getElementById('blockStartRow');
+  if (row) row.style.display = isDistributed ? '' : 'none';
+  if (isDistributed) updateBlockEstimate();
 }
+// Wire tournament type change to show/hide block row
+document.getElementById('tournamentType')?.addEventListener('change', toggleBlockStart);
 
 async function updateBlockEstimate() {
   const blocks = parseInt(document.getElementById('startDelayBlocks')?.value) || 50;
@@ -1562,8 +1560,8 @@ async function updateBlockEstimate() {
   } catch (_) {}
 }
 
-// Update estimate when delay changes
-document.getElementById('startDelayBlocks')?.addEventListener('change', updateBlockEstimate);
+// Init: hide block row for local mode on load
+setTimeout(toggleBlockStart, 100);
 
 // ── View 1: Setup ─────────────────────────────────────────
 async function startSetup() {
@@ -1578,7 +1576,6 @@ async function startSetup() {
   }
 
   const tournamentType = document.getElementById('tournamentType').value;
-  const startMode = document.getElementById('startMode').value;
   const opts = {
     gameId:               document.getElementById('gameSelect').value,
     mode:                 document.getElementById('modeSelect').value,
@@ -1589,9 +1586,9 @@ async function startSetup() {
     timeLimitMinutes:     parseInt(document.getElementById('timeLimit').value)   || 10,
     currency:             document.getElementById('currency').value,
     tournamentMode:       tournamentType,
-    startMode,
+    startMode:            tournamentType === 'distributed' ? 'block' : 'lightning',
   };
-  if (startMode === 'block') {
+  if (tournamentType === 'distributed') {
     opts.startDelayBlocks = parseInt(document.getElementById('startDelayBlocks').value) || 50;
   }
   try {
