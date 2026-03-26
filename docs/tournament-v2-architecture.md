@@ -300,6 +300,38 @@ Each player entry adds ~150 bytes to TC data. 10 players = 1.5KB extra. TC needs
 4. **Force-close timeout:** Fiber default TBD — check Fiber source. Affects dispute window.
 5. **Agent hash scope:** Hash tournament-manager.js + ram-engine.js + game definition JSON. Excludes UI/config. Deterministic inputs to the scoring function.
 
+---
+
+## Phase 3: FiberQuest Appchain (North Star)
+
+Once v2 is battle-tested on testnet, the path to mainnet is an Axon-based L2 appchain where consensus itself enforces tournament rules. Everything we build trust workarounds for on L1 becomes a consensus guarantee.
+
+### Consensus-Level Tournament Primitives
+- **Tuned block time** (2-3s) for tighter start/end sync
+- **Tournament as first-class state machine** — validators enforce state transitions natively (OPEN→ACTIVE→SETTLING→COMPLETE)
+- **Score submission as consensus action** — validators reject scores before endBlock or from unregistered agents. No type scripts needed
+- **Agent attestation at tx acceptance** — consensus rejects transactions from unattested code hashes
+
+### Native Channel Enhancements
+- **Tournament-scoped channels** — auto-lock funds to tournament, auto-settle on winner determination
+- **Conditional channels** — "transfer balance to X if tournament Y resolves with winner Z", enforced by L2 consensus
+- **Instant settlement** — no force-close timeouts, validators have full tournament context
+
+### What the Appchain Eliminates
+- Agent trust assumptions → consensus enforces
+- Payout routing complexity → consensus-level auto-settlement
+- Timing ambiguity → L2 controls block time
+- Score cell spam → consensus rejects invalid submissions
+- Voluntary send model → automatic payout
+
+### Roadmap
+1. **v2 on testnet** — prove the design, iron out edge cases
+2. **v2 on mainnet** — real money, real stakes, real users
+3. **Axon L2 appchain** — consensus-native tournament protocol
+4. **L1 as settlement/bridge** — CKB mainnet anchors the appchain
+
+---
+
 ## Still Open
 
 1. **Minimum Fiber channel size** — need to check Fiber source for `min_channel_capacity`
