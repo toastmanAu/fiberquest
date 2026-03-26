@@ -114,6 +114,11 @@ class ChainStore {
       endsAt:               tournament.endsAt || null,           // all agents stop playing
       submissionDeadline:   tournament.submissionDeadline || null, // score cells must be on-chain by here
       resolvesAt:           tournament.resolvesAt || null,       // all agents resolve winner from chain data
+      // Block-based scheduling (alternative to timestamp-based)
+      startMode:            tournament.startMode || 'lightning', // 'lightning' | 'block'
+      startBlock:           tournament.startBlock || null,       // block number to start at
+      endBlock:             tournament.endBlock || null,         // block number to end at
+      durationBlocks:       tournament.durationBlocks || null,   // duration in blocks (alternative to timeLimitMinutes)
     }
     const json = Buffer.from(JSON.stringify(payload))
     return '0x' + Buffer.concat([MAGIC, Buffer.from([VERSION]), json]).toString('hex')

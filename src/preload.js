@@ -78,9 +78,10 @@ contextBridge.exposeInMainWorld('fiberquest', {
     clearKey: ()     => ipcRenderer.invoke('agent:clearKey'),
     status:   ()     => ipcRenderer.invoke('agent:status'),
   },
-  // Chain — tournament discovery
+  // Chain — tournament discovery + block tracking
   chain: {
-    scan: () => ipcRenderer.invoke('chain:scan'),
+    scan:      () => ipcRenderer.invoke('chain:scan'),
+    blockInfo: () => ipcRenderer.invoke('chain:blockInfo'),
   },
   // QR code generation
   qr: {

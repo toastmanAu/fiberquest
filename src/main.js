@@ -15,6 +15,7 @@ const { TournamentManager } = require('./tournament-manager');
 const { detectAll, pickBestNode, pickBestCkbNode, startNodeService, launchInstaller } = require('./fiber-setup');
 const { RamEngine } = require('./ram-engine');
 const { SessionLogger, TournamentLogger } = require('./session-logger');
+const { BlockTracker } = require('./block-tracker');
 
 // ── Secure key storage ──────────────────────────────────────────────────────
 
@@ -118,6 +119,7 @@ let mainWindow;
 let gameServer;
 let fiberClient;
 let tournamentManager;
+let blockTracker;
 let agentWallet = null;
 let activeRamEngine  = null;   // Always-on RAM engine (started on game launch)
 let activeSession    = null;   // SessionLogger for current game session
@@ -332,6 +334,10 @@ function setupIPC() {
   });
 
   // Chain — tournament discovery
+  ipcMain.handle('chain:blockInfo', () => {
+    return blockTracker ? blockTracker.getInfo() : null;
+  });
+
   ipcMain.handle('chain:scan', async () => {
     try {
       // Chain scan only needs CKB RPC, not a wallet — create a read-only chain store if needed
@@ -723,8 +729,8 @@ function setupTournamentIPC() {
     await t.addPlayer(myPlayerId, myName, { slotIndex: mySlotIndex });
     console.log(`[Main] Auto-registered ${myName} at slot ${mySlotIndex}`);
 
-    // Start polling chain for state changes
-    t.startDistributedPolling();
+    // Start block-aware chain polling for state changes
+    t.startDistributedPolling(blockTracker);
     console.log(`[Main] Joined distributed tournament ${tournamentId} as ${myPlayerId} slot ${mySlotIndex} (organizer: ${cell.organizerAddress?.slice(0,30)}...)`);
     return { ...t.status(), organizerAddress: cell.organizerAddress };
   });
@@ -1013,6 +1019,12 @@ app.whenReady().then(async () => {
 
   // Start RetroArch launch watcher (file-based IPC to avoid Electron SIGSEGV)
   _startRaWatcher();
+
+  // Start block tracker (CKB chain tip monitoring)
+  blockTracker = new BlockTracker({ rpcUrl: CONFIG.ckbRpcUrl });
+  blockTracker.start().then(() => {
+    console.log(`[Main] BlockTracker: mode=${blockTracker.mode}, tip=${blockTracker.tipHeader?.number}, avgBlockTime=${(blockTracker.avgBlockTime/1000).toFixed(1)}s`);
+  }).catch(e => console.warn('[Main] BlockTracker start failed:', e.message));
 
   // Start score relay for distributed tournaments
   startScoreRelay(8767);

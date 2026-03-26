@@ -891,11 +891,21 @@ class Tournament extends EventEmitter {
   /**
    * Poll chain for score submissions from other agents (non-organizer distributed mode).
    */
-  startDistributedPolling(intervalMs = 10000) {
-    if (this._distributedPollInterval) return;
-    this._distributedPollInterval = setInterval(async () => {
+  /**
+   * Start block-aware distributed polling.
+   * Uses BlockTracker events instead of dumb setInterval — only scans chain
+   * when a new block arrives, eliminating wasted RPC calls between blocks.
+   *
+   * @param {object} blockTracker - BlockTracker instance (from main.js)
+   */
+  startDistributedPolling(blockTracker) {
+    if (this._blockHandler) return;
+    this._blockTracker = blockTracker;
+
+    // Store handler reference for cleanup
+    this._blockHandler = async (header) => {
       if (this.state === 'COMPLETE' || this.state === 'PAYING') {
-        clearInterval(this._distributedPollInterval);
+        this._stopDistributedPolling();
         return;
       }
       try {
@@ -929,18 +939,62 @@ class Tournament extends EventEmitter {
               }
               const allSubmitted = Object.keys(this.players).every(pid => this.scoreSubmissions[pid]);
               if (allSubmitted) {
-                clearInterval(this._distributedPollInterval);
+                this._stopDistributedPolling();
                 console.log('[Tournament] All scores on-chain — resolving winner');
                 this._resolveDistributedWinner();
               }
             } catch (_) {}
           }
         }
-        // Detect state changes from organizer (only fire once)
-        if (cell.state === 'ACTIVE' && (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') && !this._distributedStarted) {
+
+        // ── Block-scheduled start ───────────────────────────────────────
+        if (cell.startMode === 'block' && cell.startBlock && !this._distributedStarted) {
+          if (header.number >= cell.startBlock) {
+            this._distributedStarted = true;
+            console.log(`[Tournament] Chain: startBlock ${cell.startBlock} reached at block ${header.number}`);
+
+            const durationBlocks = cell.durationBlocks || Math.round((this.timeLimitMs || 600000) / (blockTracker.avgBlockTime || 10000));
+            const endBlock = cell.endBlock || (cell.startBlock + durationBlocks);
+            const endDelay = (endBlock - header.number) * (blockTracker.avgBlockTime || 10000);
+
+            this._startedAt = Date.now();
+            this._endBlock = endBlock;
+            this.emit('started', {
+              tournamentId: this.id,
+              game: this.gameDef?.name,
+              mode: this.mode?.name,
+              players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
+              timeLimitMs: endDelay,
+              startBlock: cell.startBlock,
+              endBlock,
+            });
+            this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
+            console.log(`[Tournament] Block-scheduled start — ends at block ${endBlock} (~${Math.round(endDelay/1000)}s)`);
+          } else {
+            // Emit progress for UI countdown
+            const remaining = blockTracker.getBlocksUntil(cell.startBlock);
+            this.emit('block_countdown', {
+              currentBlock: header.number,
+              startBlock: cell.startBlock,
+              blocksRemaining: remaining.blocks,
+              estimatedMs: remaining.estimatedMs,
+            });
+          }
+        }
+
+        // ── Block-scheduled end ─────────────────────────────────────────
+        if (this._endBlock && this.state === 'ACTIVE' && header.number >= this._endBlock) {
+          console.log(`[Tournament] ⏰ endBlock ${this._endBlock} reached at block ${header.number}`);
+          this._endTournament('block_limit');
+        }
+
+        // ── Lightning start (timestamp-based, existing behaviour) ───────
+        if ((!cell.startMode || cell.startMode === 'lightning') &&
+            cell.state === 'ACTIVE' &&
+            (this.state === 'WAITING_PLAYERS' || this.state === 'CREATED') &&
+            !this._distributedStarted) {
           this._distributedStarted = true;
 
-          // Read absolute end timestamps from chain
           const endsAt             = cell.endsAt || (Date.now() + this.timeLimitMs);
           const submissionDeadline = cell.submissionDeadline || (endsAt + 60000);
 
@@ -949,33 +1003,30 @@ class Tournament extends EventEmitter {
 
           const endDelay = Math.max(0, endsAt - Date.now());
           const remainingMinutes = Math.round(endDelay / 60000 * 10) / 10;
-          console.log(`[Tournament] Chain: ACTIVE — starting immediately`);
+          console.log(`[Tournament] Chain: ACTIVE (lightning) — starting immediately`);
           console.log(`  endsAt: ${new Date(endsAt).toISOString()} (${remainingMinutes} min remaining)`);
-          console.log(`  submissionDeadline: ${new Date(submissionDeadline).toISOString()}`);
 
-          // Start immediately — don't wait
           this._startedAt = Date.now();
           this.emit('started', {
             tournamentId: this.id,
             game: this.gameDef?.name,
             mode: this.mode?.name,
             players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
-            timeLimitMs: endDelay, // remaining time, not full duration
+            timeLimitMs: endDelay,
           });
           this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
 
-          // Set timer to fire at endsAt — same absolute moment as organiser
           this._timer = setTimeout(() => {
             console.log(`[Tournament] ⏰ Timer fired — ending tournament`);
             this._endTournament('time_limit');
           }, endDelay);
-          console.log(`[Tournament] Timer set: game ends in ${Math.round(endDelay/1000)}s (timer ID: ${this._timer})`);
+          console.log(`[Tournament] Timer set: game ends in ${Math.round(endDelay/1000)}s`);
         }
 
         // Detect tournament complete — show results
         if (cell.state === 'COMPLETE' && this.state !== 'COMPLETE' && this.state !== 'PAYING') {
           console.log(`[Tournament] Chain: tournament COMPLETE — winner: ${cell.winner}`);
-          clearInterval(this._distributedPollInterval);
+          this._stopDistributedPolling();
           if (this.engine) this.engine.stop();
           this.state = 'COMPLETE';
           const board = this._getScoreBoard();
@@ -984,9 +1035,24 @@ class Tournament extends EventEmitter {
           this.emit('complete', { tournamentId: this.id, winner, board, payouts: [], totalPot: this.entryFee * this.maxPlayers, isDraw: false });
         }
       } catch (e) {
-        // Non-fatal — will retry next interval
+        // Non-fatal — will retry on next block
       }
-    }, intervalMs);
+    };
+
+    blockTracker.on('block', this._blockHandler);
+    console.log(`[Tournament] Distributed polling started (block-aware, mode: ${blockTracker.mode})`);
+  }
+
+  _stopDistributedPolling() {
+    if (this._blockHandler && this._blockTracker) {
+      this._blockTracker.removeListener('block', this._blockHandler);
+      this._blockHandler = null;
+    }
+    // Legacy cleanup
+    if (this._distributedPollInterval) {
+      clearInterval(this._distributedPollInterval);
+      this._distributedPollInterval = null;
+    }
   }
 
   async _endTournament(reason, forcedWinner = null) {
@@ -1015,8 +1081,8 @@ class Tournament extends EventEmitter {
       // Step 2: Emit settling to UI
       this.emit('settling', { reason, tournamentId: this.id, message: `Score submitted: ${myScore}. Waiting for other agents...` });
 
-      // Step 3: Poll chain aggressively for all scores (every 5s during settling)
-      this.startDistributedPolling(5000);
+      // Step 3: Poll chain on every block for all scores (block-aware)
+      if (this._blockTracker) this.startDistributedPolling(this._blockTracker);
 
       // Step 4: Resolve at submissionDeadline — same moment on all agents
       const deadline = this._submissionDeadline || (Date.now() + 120000);

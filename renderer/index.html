@@ -970,6 +970,26 @@
           </select>
         </div>
 
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Start Mode</label>
+            <select class="form-control" id="startMode" onchange="toggleBlockStart()">
+              <option value="lightning">Lightning (instant)</option>
+              <option value="block">Block-Scheduled</option>
+            </select>
+          </div>
+          <div class="form-group" id="blockStartGroup" style="display:none">
+            <label class="form-label">Start Delay (blocks)</label>
+            <select class="form-control" id="startDelayBlocks">
+              <option value="10">10 blocks</option>
+              <option value="25">25 blocks</option>
+              <option value="50" selected>50 blocks</option>
+              <option value="100">100 blocks</option>
+            </select>
+            <div id="blockEstimate" style="font-size:var(--fs-xs);color:var(--cyan);margin-top:2px"></div>
+          </div>
+        </div>
+
         <div style="display:flex;gap:var(--sp-sm);margin-top:var(--sp-md)">
           <button class="btn muted" onclick="goHome()">← BACK</button>
           <button id="launchBtn" class="btn muted" style="display:none" onclick="launchGame()">▶ LAUNCH GAME</button>
@@ -1521,6 +1541,30 @@ function applyDefaultsToSetup(cfg) {
   if (cfg.defaultRegistrationMinutes) document.getElementById('regWindow').value    = cfg.defaultRegistrationMinutes;
 }
 
+// ── Block start mode UI ───────────────────────────────────
+function toggleBlockStart() {
+  const mode = document.getElementById('startMode').value;
+  document.getElementById('blockStartGroup').style.display = mode === 'block' ? '' : 'none';
+  if (mode === 'block') updateBlockEstimate();
+}
+
+async function updateBlockEstimate() {
+  const blocks = parseInt(document.getElementById('startDelayBlocks')?.value) || 50;
+  try {
+    const info = await window.fiberquest.chain.blockInfo();
+    if (info?.avgBlockTime) {
+      const secs = Math.round(blocks * info.avgBlockTime / 1000);
+      const mins = Math.floor(secs / 60);
+      const rem  = secs % 60;
+      document.getElementById('blockEstimate').textContent =
+        `~${mins}m ${rem}s (avg ${(info.avgBlockTime/1000).toFixed(1)}s/block)`;
+    }
+  } catch (_) {}
+}
+
+// Update estimate when delay changes
+document.getElementById('startDelayBlocks')?.addEventListener('change', updateBlockEstimate);
+
 // ── View 1: Setup ─────────────────────────────────────────
 async function startSetup() {
   // Guard: require at least Fiber or agent wallet to be available
@@ -1534,6 +1578,7 @@ async function startSetup() {
   }
 
   const tournamentType = document.getElementById('tournamentType').value;
+  const startMode = document.getElementById('startMode').value;
   const opts = {
     gameId:               document.getElementById('gameSelect').value,
     mode:                 document.getElementById('modeSelect').value,
@@ -1544,7 +1589,11 @@ async function startSetup() {
     timeLimitMinutes:     parseInt(document.getElementById('timeLimit').value)   || 10,
     currency:             document.getElementById('currency').value,
     tournamentMode:       tournamentType,
+    startMode,
   };
+  if (startMode === 'block') {
+    opts.startDelayBlocks = parseInt(document.getElementById('startDelayBlocks').value) || 50;
+  }
   try {
     currentTournament = await window.fiberquest.tournament.create(opts);
     // Skip controller assignment for distributed — each machine has 1 player
