@@ -368,6 +368,63 @@ function setupIPC() {
     return wallet.getWalletInfo();
   });
 
+  // Transaction cost estimate (v0.3.0) — show user what they'll spend before confirming
+  ipcMain.handle('wallet:estimateCosts', async (_, action, opts) => {
+    const wallet = tournamentManager?.wallet;
+    if (!wallet) return { error: 'No agent wallet configured' };
+
+    const info = await wallet.getWalletInfo();
+    const balance = info.available;
+
+    if (action === 'create') {
+      // TC cell: ~300 bytes data + lock/type overhead ≈ 400 CKB capacity
+      // Scales with playerCount (more player slots = more data)
+      const playerCount = opts.playerCount || opts.players || 2;
+      const baseTcCost = 300; // minimum TC cell capacity
+      const perPlayerCost = 20; // extra capacity per player slot
+      const tcCost = baseTcCost + (playerCount * perPlayerCost);
+      const entryFee = opts.entryFee || 100;
+      const txFee = 1; // CKB tx fee estimate
+      const total = tcCost + entryFee + txFee;
+
+      return {
+        action: 'create',
+        items: [
+          { label: 'Tournament Cell', amount: tcCost, note: 'Reclaimable on completion' },
+          { label: 'Your Entry Fee', amount: entryFee, note: 'Held in Fiber channel' },
+          { label: 'Transaction Fee', amount: txFee, note: 'Network fee' },
+        ],
+        total,
+        balance,
+        balanceAfter: Math.round((balance - total) * 100) / 100,
+        sufficient: balance >= total,
+      };
+    }
+
+    if (action === 'join') {
+      // Intent cell: ~380 CKB capacity (reclaimable)
+      const intentCost = 380;
+      const entryFee = opts.entryFee || 100;
+      const txFee = 1;
+      const total = intentCost + entryFee + txFee;
+
+      return {
+        action: 'join',
+        items: [
+          { label: 'Intent Cell', amount: intentCost, note: 'Reclaimable after registration' },
+          { label: 'Entry Fee', amount: entryFee, note: 'Fiber channel to organiser' },
+          { label: 'Transaction Fee', amount: txFee, note: 'Network fee' },
+        ],
+        total,
+        balance,
+        balanceAfter: Math.round((balance - total) * 100) / 100,
+        sufficient: balance >= total,
+      };
+    }
+
+    return { error: 'Unknown action' };
+  });
+
   ipcMain.handle('chain:scan', async () => {
     try {
       // Chain scan only needs CKB RPC, not a wallet — create a read-only chain store if needed

@@ -1076,6 +1076,12 @@
       </div>
     </div>
 
+    <!-- Prominent status feed (not just console) -->
+    <div id="waitingStatusFeed" style="background:var(--surface);border:var(--border-w) solid var(--border);border-radius:var(--radius);padding:var(--sp-sm);margin-bottom:var(--sp-sm);max-height:120px;overflow-y:auto">
+      <div style="font-size:calc(var(--fs-xs) - 1px);color:var(--muted);margin-bottom:var(--sp-xs)">STATUS</div>
+      <div id="waitingStatusList" style="font-size:var(--fs-xs)"></div>
+    </div>
+
     <div class="player-slots" id="playerSlots"></div>
     <button class="btn muted" style="margin-top:var(--sp-sm)" onclick="goHome()">← CANCEL</button>
   </div>
@@ -1086,6 +1092,46 @@
     <div style="font-size:var(--fs-md);color:var(--text);text-align:center">PRESS ANY BUTTON ON YOUR CONTROLLER</div>
     <div style="font-size:var(--fs-2xl);animation:blink 1s step-end infinite">🎮</div>
     <div style="font-size:var(--fs-xs);color:var(--muted)" id="ctrlDetected"></div>
+  </div>
+
+  <!-- ── TRANSACTION CONFIRMATION MODAL ──────────────────────── -->
+  <div id="txConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:998;align-items:center;justify-content:center;flex-direction:column">
+    <div style="max-width:420px;width:90%;background:var(--surface);border:var(--border-w) solid var(--cyan);border-radius:var(--radius);padding:var(--sp-lg);position:relative">
+      <div style="font-size:var(--fs-md);color:var(--cyan);text-align:center;margin-bottom:var(--sp-md)" id="txConfirmTitle">CONFIRM TRANSACTION</div>
+
+      <!-- Line items -->
+      <div id="txConfirmItems" style="margin-bottom:var(--sp-md)"></div>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid var(--border);margin:var(--sp-sm) 0"></div>
+
+      <!-- Total -->
+      <div style="display:flex;justify-content:space-between;font-size:var(--fs-sm);color:var(--text);margin-bottom:var(--sp-sm)">
+        <span>TOTAL</span>
+        <span id="txConfirmTotal" style="color:var(--yellow);font-weight:bold">— CKB</span>
+      </div>
+
+      <!-- Balance -->
+      <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--muted);margin-bottom:2px">
+        <span>Wallet Balance</span>
+        <span id="txConfirmBalance">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);margin-bottom:var(--sp-md)">
+        <span style="color:var(--muted)">After Transaction</span>
+        <span id="txConfirmAfter" style="color:var(--green)">—</span>
+      </div>
+
+      <!-- Insufficient funds warning -->
+      <div id="txConfirmWarn" style="display:none;background:rgba(255,32,82,0.1);border:1px solid var(--red);border-radius:var(--radius);padding:var(--sp-sm);margin-bottom:var(--sp-md);font-size:var(--fs-xs);color:var(--red);text-align:center">
+        Insufficient funds — top up your agent wallet
+      </div>
+
+      <!-- Buttons -->
+      <div style="display:flex;gap:var(--sp-sm)">
+        <button class="btn muted" style="flex:1" onclick="closeTxConfirm()">CANCEL</button>
+        <button class="btn" style="flex:1" id="txConfirmBtn" onclick="executeTxConfirm()">CONFIRM</button>
+      </div>
+    </div>
   </div>
 
   <!-- ── VIEW 3: LIVE ──────────────────────────────────────── -->
@@ -1705,6 +1751,20 @@ function _updateBlockCountdownUI(info, tournament) {
   }
 }
 
+// ── Waiting room status feed ───────────────────────────────
+function waitingStatus(msg, type = 'info') {
+  const list = document.getElementById('waitingStatusList');
+  if (!list) return;
+  const colors = { info: 'var(--text)', ok: 'var(--green)', warn: 'var(--yellow)', error: 'var(--red)', cyan: 'var(--cyan)' };
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const el = document.createElement('div');
+  el.style.color = colors[type] || colors.info;
+  el.style.marginBottom = '2px';
+  el.innerHTML = `<span style="color:var(--muted)">${time}</span> ${msg}`;
+  list.appendChild(el);
+  list.scrollTop = list.scrollHeight;
+}
+
 function _formatBlockTime(ms) {
   const secs = Math.round(ms / 1000);
   if (secs < 60) return `${secs}s`;
@@ -1741,14 +1801,17 @@ async function startSetup() {
   if (tournamentType === 'distributed') {
     opts.startDelayBlocks = parseInt(document.getElementById('startDelayBlocks').value) || 50;
   }
-  try {
-    currentTournament = await window.fiberquest.tournament.create(opts);
-    // Skip controller assignment for distributed — each machine has 1 player
-    if (tournamentType !== 'distributed') {
-      await runPreControllerAssignment(opts.players);
-    }
-    showWaitingRoom();
-  } catch (e) { alert('Error creating tournament: ' + e.message); }
+  // Show transaction confirmation before creating
+  showTxConfirm('create', { entryFee: opts.entryFee, playerCount: opts.players }, async () => {
+    try {
+      currentTournament = await window.fiberquest.tournament.create(opts);
+      // Skip controller assignment for distributed — each machine has 1 player
+      if (tournamentType !== 'distributed') {
+        await runPreControllerAssignment(opts.players);
+      }
+      showWaitingRoom();
+    } catch (e) { alert('Error creating tournament: ' + e.message); }
+  });
 }
 
 // ── View 2: Waiting room ──────────────────────────────────
@@ -2291,7 +2354,6 @@ function handleTournamentEvent(ev) {
       showResults(ev);
       break;
     case 'block_countdown': {
-      // Update block countdown bar from tournament manager events
       if (currentTournament && ev.currentBlock) {
         const info = { tipNumber: ev.currentBlock, avgBlockTime: 10000 };
         window.fiberquest.chain.blockInfo().then(bi => {
@@ -2300,16 +2362,29 @@ function handleTournamentEvent(ev) {
       }
       break;
     }
+    case 'chain_tournament': {
+      waitingStatus('Tournament cell confirmed on-chain', 'ok');
+      break;
+    }
     case 'channel_funded': {
+      waitingStatus(`Fiber channel funded for ${ev.playerId}`, 'ok');
       retroLog(`Channel funded for ${ev.playerId} ✅`, 'ok');
       break;
     }
     case 'player_registered': {
+      waitingStatus(`Player registered: ${ev.address?.slice(0, 20) || ev.playerId}`, 'cyan');
       retroLog(`Player registered: ${ev.address?.slice(0, 20) || ev.playerId}`, 'info');
       const ws = document.getElementById('waitStatus');
       const registered = currentTournament?.registeredPlayers || '?';
       const total = currentTournament?.playerCount || currentTournament?.maxPlayers || '?';
       if (ws) ws.textContent = `${registered}/${total} registered`;
+      break;
+    }
+    case 'player_registered_self': {
+      waitingStatus('You have been registered by the organiser!', 'ok');
+      waitingStatus('Opening Fiber channel for entry fee...', 'cyan');
+      const st = document.getElementById('status-0');
+      if (st) { st.textContent = 'Registered — opening Fiber channel...'; st.style.color = 'var(--green)'; }
       break;
     }
     case 'error': {
@@ -2538,43 +2613,55 @@ function toggleTCard(i) {
 
 // ── Join distributed tournament from browse list ─────────
 async function joinDistributedTournament(tournamentId) {
-  retroLog(`Attempting to join ${tournamentId}...`, 'info');
+  retroLog(`Loading tournament details...`, 'info');
   const playerName = 'Player-' + Math.random().toString(36).slice(2, 6);
   const playerId = 'player-0';
-  try {
-    retroLog(`Submitting intent cell to join ${tournamentId}...`, 'info');
-    currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
 
-    if (currentTournament.intentSubmitted) {
-      retroLog('Intent cell submitted — waiting for TM to register you', 'ok');
-    } else {
-      retroLog(`Joined tournament: ${tournamentId}`, 'ok');
+  // Find the tournament's entry fee from browse cache
+  const cached = _browseCache.tournaments?.find(t => t.id === tournamentId);
+  const entryFee = cached?.entryFee || 100;
+
+  // Show transaction confirmation first
+  showTxConfirm('join', { entryFee }, async () => {
+    try {
+      retroLog(`Submitting intent cell to join ${tournamentId}...`, 'info');
+      currentTournament = await window.fiberquest.tournament.joinDistributed(tournamentId, playerId, playerName);
+
+      if (currentTournament.intentSubmitted) {
+        retroLog('Intent cell submitted — waiting for TM to register you', 'ok');
+      } else {
+        retroLog(`Joined tournament: ${tournamentId}`, 'ok');
+      }
+
+      showWaitingRoom();
+
+      // v0.3.0: show intent status with prominent on-screen updates
+      setTimeout(() => {
+        const nameInput = document.getElementById('name-0');
+        const btn = document.querySelector('#step-name-0 .slot-button');
+        if (nameInput) {
+          nameInput.value = playerName;
+          nameInput.disabled = true;
+        }
+        if (btn) {
+          btn.textContent = 'INTENT SENT';
+          btn.disabled = true;
+        }
+        const st = document.getElementById('status-0');
+        if (st) {
+          st.textContent = 'Intent cell on-chain — waiting for TM to register...';
+          st.style.color = 'var(--cyan)';
+        }
+        document.getElementById('slot-0')?.classList.add('active');
+
+        // Update the main status text prominently
+        const ws = document.getElementById('waitStatus');
+        if (ws) ws.textContent = 'Intent submitted — waiting for organiser to register you...';
+      }, 500);
+    } catch (e) {
+      retroLog('Join failed: ' + (e.message || e), 'error');
     }
-
-    showWaitingRoom();
-
-    // v0.3.0: show intent status instead of payment flow
-    setTimeout(() => {
-      const nameInput = document.getElementById('name-0');
-      const btn = document.querySelector('#step-name-0 .slot-button');
-      if (nameInput) {
-        nameInput.value = playerName;
-        nameInput.disabled = true;
-      }
-      if (btn) {
-        btn.textContent = 'INTENT SENT';
-        btn.disabled = true;
-      }
-      const st = document.getElementById('status-0');
-      if (st) {
-        st.textContent = 'Intent cell on-chain — waiting for TM to register...';
-        st.style.color = 'var(--cyan)';
-      }
-      document.getElementById('slot-0')?.classList.add('active');
-    }, 500);
-  } catch (e) {
-    retroLog('Join failed: ' + (e.message || e), 'error');
-  }
+  });
 }
 
 // Legacy — kept so any existing callers don't break
@@ -2860,6 +2947,80 @@ async function refreshWallet() {
       `;
     }
   } catch (_) {}
+}
+
+// ── Transaction confirmation modal ────────────────────────
+let _txConfirmCallback = null;
+
+async function showTxConfirm(action, opts, onConfirm) {
+  const modal = document.getElementById('txConfirmModal');
+  if (!modal) return onConfirm(); // fallback: no modal, just execute
+
+  // Get cost estimate from backend
+  const estimate = await window.fiberquest.wallet.estimateCosts(action, opts);
+  if (estimate.error) {
+    // No wallet — skip confirmation, let backend handle it
+    retroLog('Wallet not available — proceeding without confirmation', 'warn');
+    return onConfirm();
+  }
+
+  // Set title
+  const titleEl = document.getElementById('txConfirmTitle');
+  if (titleEl) titleEl.textContent = action === 'create' ? 'CREATE TOURNAMENT' : 'JOIN TOURNAMENT';
+
+  // Render line items
+  const itemsEl = document.getElementById('txConfirmItems');
+  if (itemsEl) {
+    itemsEl.innerHTML = estimate.items.map(item => `
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:var(--sp-xs)">
+        <div>
+          <div style="font-size:var(--fs-xs);color:var(--text)">${item.label}</div>
+          <div style="font-size:calc(var(--fs-xs) - 2px);color:var(--muted)">${item.note}</div>
+        </div>
+        <div style="font-size:var(--fs-xs);color:var(--text);white-space:nowrap">${item.amount} CKB</div>
+      </div>
+    `).join('');
+  }
+
+  // Totals
+  document.getElementById('txConfirmTotal').textContent = `${estimate.total} CKB`;
+  document.getElementById('txConfirmBalance').textContent = `${estimate.balance.toFixed(0)} CKB`;
+
+  const afterEl = document.getElementById('txConfirmAfter');
+  if (afterEl) {
+    afterEl.textContent = `${estimate.balanceAfter.toFixed(0)} CKB`;
+    afterEl.style.color = estimate.sufficient ? 'var(--green)' : 'var(--red)';
+  }
+
+  // Insufficient funds warning
+  const warnEl = document.getElementById('txConfirmWarn');
+  if (warnEl) warnEl.style.display = estimate.sufficient ? 'none' : 'block';
+
+  // Confirm button
+  const confirmBtn = document.getElementById('txConfirmBtn');
+  if (confirmBtn) {
+    confirmBtn.disabled = !estimate.sufficient;
+    confirmBtn.textContent = estimate.sufficient ? 'CONFIRM' : 'INSUFFICIENT FUNDS';
+  }
+
+  _txConfirmCallback = onConfirm;
+  modal.style.display = 'flex';
+}
+
+function closeTxConfirm() {
+  const modal = document.getElementById('txConfirmModal');
+  if (modal) modal.style.display = 'none';
+  _txConfirmCallback = null;
+}
+
+function executeTxConfirm() {
+  const modal = document.getElementById('txConfirmModal');
+  if (modal) modal.style.display = 'none';
+  if (_txConfirmCallback) {
+    const cb = _txConfirmCallback;
+    _txConfirmCallback = null;
+    cb();
+  }
 }
 
 // Auto-refresh wallet when view is shown
