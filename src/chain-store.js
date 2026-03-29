@@ -203,18 +203,28 @@ class ChainStore {
       ? '0x' + Buffer.from(tournamentId, 'utf8').toString('hex')
       : '0x' // empty prefix = match all FiberQuest tournaments
 
-    const result = await this._rpc('get_cells', [
-      {
-        script: { code_hash: ALWAYS_SUCCESS_CODE_HASH, hash_type: 'data1', args },
-        script_type: 'type',
-        with_data: true
-      },
-      'desc',
-      '0x64' // up to 100 cells
-    ])
+    const searchKey = {
+      script: { code_hash: ALWAYS_SUCCESS_CODE_HASH, hash_type: 'data1', args },
+      script_type: 'type',
+      with_data: true
+    }
+
+    // Paginate through all cells (indexer caps per-request)
+    const allCells = []
+    let cursor = null
+    for (let page = 0; page < 10; page++) { // safety cap: 10 pages × 200 = 2000 cells
+      const params = cursor
+        ? [searchKey, 'desc', '0xC8', cursor] // 200 per page, with cursor
+        : [searchKey, 'desc', '0xC8']
+      const result = await this._rpc('get_cells', params)
+      const objects = result.objects || []
+      allCells.push(...objects)
+      if (objects.length < 200 || !result.last_cursor) break
+      cursor = result.last_cursor
+    }
 
     const tournaments = []
-    for (const cell of result.objects || []) {
+    for (const cell of allCells) {
       const data = this.decodeData(cell.output_data || cell.outputData)
       if (!data) continue // skips non-FQTX cells (false positive guard)
       tournaments.push({
@@ -344,6 +354,7 @@ class ChainStore {
           address:        p.playerAddress,
           fiberPeerId:    p.fiberPeerId,
           agentCodeHash:  p.agentCodeHash,
+          paid:           true,  // Intent cell creation = proof of L1 deposit
           channelFunded:  false,
           registeredAt:   Date.now(),
         })

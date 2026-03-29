@@ -5,6 +5,10 @@
 
 'use strict';
 
+// Prevent EPIPE crashes when stdout/stderr pipe breaks (e.g. terminal disconnect)
+process.stdout?.on('error', () => {});
+process.stderr?.on('error', () => {});
+
 const { app, BrowserWindow, ipcMain, safeStorage } = require('electron');
 const path = require('path');
 const fs   = require('fs');
@@ -442,6 +446,37 @@ function setupIPC() {
     }
   });
 
+  // Reclaim CKB from old tournament cells (COMPLETE/CANCELLED/ESCROW/SETTLING)
+  ipcMain.handle('chain:reclaim', async () => {
+    try {
+      if (!chainStore || !agentWallet) return { ok: false, reason: 'No wallet loaded' };
+      const all = await chainStore.scanTournaments();
+      const reclaimable = all.filter(t =>
+        t.organizerAddress === agentWallet.address &&
+        ['COMPLETE', 'CANCELLED', 'ESCROW', 'SETTLING'].includes(t.state)
+      );
+      if (!reclaimable.length) return { ok: true, consumed: 0, ckbReclaimed: 0 };
+
+      let consumed = 0, ckbReclaimed = 0, errors = [];
+      for (const t of reclaimable) {
+        try {
+          console.log(`[Reclaim] Consuming ${t.id} (${t.state}, ${t.capacityCkb} CKB)…`);
+          await chainStore.consumeCell(t.outPoint);
+          consumed++;
+          ckbReclaimed += t.capacityCkb;
+          console.log(`[Reclaim] ✅ ${t.id} consumed`);
+          await new Promise(r => setTimeout(r, 2000)); // mempool settle
+        } catch (e) {
+          console.log(`[Reclaim] ❌ ${t.id}: ${e.message}`);
+          errors.push({ id: t.id, error: e.message });
+        }
+      }
+      return { ok: true, consumed, ckbReclaimed: ckbReclaimed.toFixed(2), total: reclaimable.length, errors };
+    } catch (e) {
+      return { ok: false, reason: e.message };
+    }
+  });
+
   // QR code generation
   ipcMain.handle('qr:generate', async (_, text) => {
     const QRCode = require('qrcode');
@@ -792,7 +827,8 @@ function setupTournamentIPC() {
   });
 
   // ── Distributed tournament: join an existing on-chain tournament ─────────
-  ipcMain.handle('tournament:joinDistributed', async (_, tournamentId, myPlayerId, myName) => {
+  ipcMain.handle('tournament:joinDistributed', async (_, tournamentId, _myPlayerId, myName) => {
+    let myPlayerId = _myPlayerId;
     // Use existing chain store or create a read-only one for scanning
     let chainStore = tournamentManager.chainStore;
     if (!chainStore) {
@@ -810,7 +846,14 @@ function setupTournamentIPC() {
     // The intent cell will be created in the player_paid handler on the Tournament instance.
 
     // Create local tournament mirror from on-chain data
-    const mySlotIndex = (cell.players || []).length;
+    // Slot 0 is always the organizer. PA joining gets slot 1+.
+    // cell.players may not include the organizer yet (added via intent cell batch-register),
+    // so we use max(1, players.length) to ensure PA never gets player-0.
+    const existingPlayers = (cell.players || []).length;
+    const mySlotIndex = existingPlayers > 0 ? existingPlayers : 1;
+    // Assign player ID from chain state (not from client — client may send null or stale value)
+    myPlayerId = myPlayerId || `player-${mySlotIndex}`;
+    console.log(`[Main] Assigned playerId=${myPlayerId} (slot ${mySlotIndex}, ${(cell.players || []).length} existing players on chain)`);
     const t = await tournamentManager.create({
       id:               cell.id,
       gameId:           cell.gameId,

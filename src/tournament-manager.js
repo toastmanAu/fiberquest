@@ -589,12 +589,12 @@ class Tournament extends EventEmitter {
   async start() {
     console.log(`[Tournament] start() called — state=${this.state} players=${Object.keys(this.players).length} timer=${!!this._timer}`);
     if (this.state === 'ACTIVE') { console.log('[Tournament] Already ACTIVE, skipping start'); return; }
-    if (this.state !== 'WAITING_PLAYERS' && this.state !== 'CREATED') {
+    if (this.state !== 'WAITING_PLAYERS' && this.state !== 'CREATED' && this.state !== 'FUNDED') {
       throw new Error(`Cannot start in state ${this.state}`);
     }
 
     const unpaid = Object.entries(this.players).filter(([,p]) => !p.paid);
-    if (unpaid.length > 0 && process.env.REQUIRE_PAYMENT !== 'false') {
+    if (unpaid.length > 0 && this.tournamentMode !== 'distributed' && process.env.REQUIRE_PAYMENT !== 'false') {
       throw new Error(`Waiting for payment from: ${unpaid.map(([id]) => id).join(', ')}`);
     }
 
@@ -1123,6 +1123,8 @@ class Tournament extends EventEmitter {
    * Submit this agent's local score data on-chain (distributed mode).
    */
   async _submitMyScore() {
+    const organizerAddr = this._organizerAddress || null;
+    console.log(`[Tournament] _submitMyScore called — myPlayerId=${this.myPlayerId} hasWallet=${!!this._wallet} hasChainStore=${!!this._chainStore} organizerAddr=${organizerAddr?.slice(0,40) || 'NONE (will use own address)'} isOrganiser=${this._isOrganiser}`);
     if (!this.myPlayerId) { console.warn('[Tournament] No myPlayerId — skipping score submit'); return; }
     if (!this._wallet && !this._chainStore?.wallet) {
       console.warn('[Tournament] No wallet — score cell cannot be written');
@@ -1306,13 +1308,20 @@ class Tournament extends EventEmitter {
                       name: intent.playerAddress?.slice(-8) || pid,
                       address: intent.playerAddress,
                       fiberPeerId: intent.fiberPeerId,
-                      paid: false,
+                      paid: true,  // Intent cell creation = proof of L1 deposit
                       channelFunded: false,
                     };
                     this.registeredPlayers = Object.keys(this.players).length;
                     console.log(`[Tournament] Registered ${pid} (${intent.playerAddress?.slice(0,20)}...)`);
                     this.emit('player_registered', { playerId: pid, address: intent.playerAddress });
                   }
+                }
+
+                // ── All players registered → schedule startBlock write (next block, after batch-register confirms) ────
+                if (this.registeredPlayers >= required && !this._startBlockPending) {
+                  this._startBlockPending = true;
+                  this._startBlockWriteAfter = header.number + 1; // wait 1 block for batch-register to confirm
+                  console.log(`[Tournament] All ${required} players registered — will write startBlock after block ${this._startBlockWriteAfter}`);
                 }
               }
             } catch (e) {
@@ -1330,6 +1339,41 @@ class Tournament extends EventEmitter {
             const finalCount = Object.keys(this.players).length;
             console.log(`[Tournament] entryCutoffBlock ${cutoff} reached — ${finalCount}/${required} players`);
             this.emit('cutoff_reached', { tournamentId: this.id, block: header.number, registered: finalCount, required });
+          }
+        }
+
+        // ── Deferred startBlock write (runs after batch-register confirms) ────
+        if (this._startBlockPending && !this._startBlockWritten && this._isOrganiser &&
+            header.number >= this._startBlockWriteAfter) {
+          this._startBlockWritten = true;
+          const avgBlockTime = this._blockTracker?.avgBlockTime || 10000;
+          const startBuffer = 5;
+          const startBlock = header.number + startBuffer;
+          const durationBlocks = Math.round((this.timeLimitMs || 600000) / avgBlockTime);
+          const endBlock = startBlock + durationBlocks;
+
+          console.log(`[Tournament] Writing startBlock=${startBlock}, endBlock=${endBlock} to chain...`);
+          try {
+            const freshCells = await this._chainStore.scanTournaments(this.id);
+            if (freshCells.length > 0) {
+              const freshCell = freshCells[0];
+              await this._chainStore.updateCell(freshCell.outPoint, {
+                ...freshCell,
+                state: 'FUNDED',
+                startBlock,
+                endBlock,
+                durationBlocks,
+              });
+              console.log(`[Tournament] ✅ startBlock written to chain — game starts at block ${startBlock}`);
+              // Set locally so organizer doesn't depend on chain poll to trigger start
+              this.startBlock = startBlock;
+              this.endBlock = endBlock;
+              this.durationBlocks = durationBlocks;
+            }
+          } catch (e) {
+            console.error(`[Tournament] Failed to write startBlock: ${e.message}`);
+            this._startBlockWritten = false; // retry next block
+            this._startBlockWriteAfter = header.number + 1;
           }
         }
 
@@ -1357,13 +1401,14 @@ class Tournament extends EventEmitter {
         }
 
         // ── Block-scheduled start ───────────────────────────────────────
-        if (cell.startBlock && !this._distributedStarted) {
-          if (header.number >= cell.startBlock) {
+        const effectiveStartBlock = cell.startBlock || this.startBlock;
+        if (effectiveStartBlock && !this._distributedStarted) {
+          if (header.number >= effectiveStartBlock) {
             this._distributedStarted = true;
-            console.log(`[Tournament] Chain: startBlock ${cell.startBlock} reached at block ${header.number}`);
+            console.log(`[Tournament] Chain: startBlock ${effectiveStartBlock} reached at block ${header.number}`);
 
-            const durationBlocks = cell.durationBlocks || Math.round((this.timeLimitMs || 600000) / (blockTracker.avgBlockTime || 10000));
-            const endBlock = cell.endBlock || (cell.startBlock + durationBlocks);
+            const durationBlocks = cell.durationBlocks || this.durationBlocks || Math.round((this.timeLimitMs || 600000) / (blockTracker.avgBlockTime || 10000));
+            const endBlock = cell.endBlock || this.endBlock || (effectiveStartBlock + durationBlocks);
             const endDelay = (endBlock - header.number) * (blockTracker.avgBlockTime || 10000);
 
             this._startedAt = Date.now();
@@ -1374,17 +1419,17 @@ class Tournament extends EventEmitter {
               mode: this.mode?.name,
               players: Object.entries(this.players).map(([id, p]) => ({ id, name: p.name })),
               timeLimitMs: endDelay,
-              startBlock: cell.startBlock,
+              startBlock: effectiveStartBlock,
               endBlock,
             });
             this.start().catch(e => console.error('[Tournament] Auto-start failed:', e.message));
             console.log(`[Tournament] Block-scheduled start — ends at block ${endBlock} (~${Math.round(endDelay/1000)}s)`);
           } else {
             // Emit progress for UI countdown
-            const remaining = blockTracker.getBlocksUntil(cell.startBlock);
+            const remaining = blockTracker.getBlocksUntil(effectiveStartBlock);
             this.emit('block_countdown', {
               currentBlock: header.number,
-              startBlock: cell.startBlock,
+              startBlock: effectiveStartBlock,
               blocksRemaining: remaining.blocks,
               estimatedMs: remaining.estimatedMs,
             });
@@ -1392,8 +1437,9 @@ class Tournament extends EventEmitter {
         }
 
         // ── Block-scheduled end ─────────────────────────────────────────
-        if (this._endBlock && this.state === 'ACTIVE' && header.number >= this._endBlock) {
-          console.log(`[Tournament] ⏰ endBlock ${this._endBlock} reached at block ${header.number}`);
+        if (this._endBlock && (this.state === 'ACTIVE' || this.state === 'FUNDED') && header.number >= this._endBlock) {
+          console.log(`[Tournament] ⏰ endBlock ${this._endBlock} reached at block ${header.number} (state=${this.state})`);
+          if (this.state === 'FUNDED') this.state = 'ACTIVE'; // force into ACTIVE so _endTournament works
           this._endTournament('block_limit');
         }
 
@@ -1771,6 +1817,7 @@ class Tournament extends EventEmitter {
       endBlock:         this.endBlock,
       durationBlocks:   this.durationBlocks,
       startMode:        this.startMode,
+      myPlayerId:       this.myPlayerId,
     };
   }
 }
@@ -1971,12 +2018,17 @@ class TournamentManager extends EventEmitter {
       }
       // Fiber channels close cooperatively — each PA's agent handles its own channel
     } else {
-      console.log(`[TournamentManager] Player count met — transitioning to FUNDED`);
-      t.state = 'FUNDED';
-      if (this.chainStore && t.chainOutPoint) {
-        const { outPoint } = await this.chainStore.closeRegistration(t.chainOutPoint, t._chainData())
-          .catch(e => { console.warn('Chain funding transition failed:', e.message); return {}; });
-        if (outPoint) t.chainOutPoint = outPoint;
+      // Skip if already FUNDED (startBlock may have been written before cutoff)
+      if (t.state === 'FUNDED' || t._startBlockWritten) {
+        console.log(`[TournamentManager] Player count met — already FUNDED, skipping transition`);
+      } else {
+        console.log(`[TournamentManager] Player count met — transitioning to FUNDED`);
+        t.state = 'FUNDED';
+        if (this.chainStore && t.chainOutPoint) {
+          const { outPoint } = await this.chainStore.closeRegistration(t.chainOutPoint, t._chainData())
+            .catch(e => { console.warn('Chain funding transition failed:', e.message); return {}; });
+          if (outPoint) t.chainOutPoint = outPoint;
+        }
       }
       this.emit('registration_closed', { tournamentId: t.id, registered });
     }

@@ -1026,6 +1026,7 @@
           <input class="browse-search" id="browse-search" type="text"
                  placeholder="Search game, ID, state…" oninput="renderBrowseList()">
           <button class="btn muted" style="white-space:nowrap" onclick="browseRefresh(true)">↺ REFRESH</button>
+          <button class="btn muted" style="white-space:nowrap" onclick="reclaimOldCells()">RECLAIM CKB</button>
         </div>
 
         <div class="filter-chips" id="browse-filters">
@@ -2551,14 +2552,25 @@ function setBrowseFilter(f) {
 
 async function browseRefresh(force = false) {
   const CACHE_TTL = 30000; // 30s
+  // Reset stuck fetching flag after 15s
+  if (_browseCache.fetching && _browseCache._fetchStart && Date.now() - _browseCache._fetchStart > 15000) {
+    console.warn('[Browse] Resetting stuck fetching flag');
+    _browseCache.fetching = false;
+  }
   if (_browseCache.fetching) return;
   if (!force && _browseCache.lastFetch && Date.now() - _browseCache.lastFetch < CACHE_TTL) {
     renderBrowseList(); return;
   }
   _browseCache.fetching = true;
+  _browseCache._fetchStart = Date.now();
   document.getElementById('browse-status').textContent = 'Scanning chain…';
   try {
     const result = await window.fiberquest.chain.scan();
+    console.log('[Browse] Scan result:', result.ok, 'count:', (result.tournaments || []).length, result.reason || '');
+    if (!result.ok) {
+      document.getElementById('browse-status').textContent = `Scan failed: ${result.reason}`;
+      return;
+    }
     _browseCache.tournaments = result.tournaments || [];
     _browseCache.lastFetch   = Date.now();
     renderBrowseList();
@@ -2645,10 +2657,10 @@ function toggleTCard(i) {
 async function joinDistributedTournament(tournamentId) {
   retroLog(`Loading tournament details...`, 'info');
   const playerName = 'Player-' + Math.random().toString(36).slice(2, 6);
-  const playerId = 'player-0';
 
-  // Find the tournament's entry fee from browse cache
+  // Find the tournament's entry fee from browse cache — player ID assigned server-side from chain state
   const cached = _browseCache.tournaments?.find(t => t.id === tournamentId);
+  const playerId = null; // let server assign from chain cell
   const entryFee = cached?.entryFee || 100;
 
   // Show transaction confirmation first
@@ -2669,7 +2681,9 @@ async function joinDistributedTournament(tournamentId) {
 
         // Step 2: Trigger JoyID payment → agent wallet
         // This shows the connect QR, then sign QR
-        window.fiberquest.tournament.fundAgent(currentTournament.id, playerId)
+        // Use server-assigned player ID from joinDistributed response
+        const myPlayerId = currentTournament.myPlayerId || currentTournament.playerId || playerId || 'player-0';
+        window.fiberquest.tournament.fundAgent(currentTournament.id, myPlayerId)
           .then(() => {
             waitingStatus('JoyID QR ready — scan to pay entry fee', 'info');
           })
@@ -2691,6 +2705,20 @@ async function joinDistributedTournament(tournamentId) {
 
 // Legacy — kept so any existing callers don't break
 async function refreshChainTournaments() { await browseRefresh(true); }
+
+async function reclaimOldCells() {
+  const status = document.getElementById('browse-status');
+  status.textContent = 'Reclaiming CKB from old cells…';
+  try {
+    const result = await window.fiberquest.chain.reclaim();
+    if (!result.ok) { status.textContent = `Reclaim failed: ${result.reason}`; return; }
+    status.textContent = `Reclaimed ${result.ckbReclaimed} CKB from ${result.consumed}/${result.total} cells` +
+      (result.errors?.length ? ` (${result.errors.length} errors)` : '');
+    if (result.consumed > 0) await browseRefresh(true);
+  } catch (e) {
+    status.textContent = `Reclaim error: ${e.message}`;
+  }
+}
 
 // ── Games Library ─────────────────────────────────────────
 let _gamesFilter = 'ALL';

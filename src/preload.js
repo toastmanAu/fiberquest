@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('fiberquest', {
   // Chain — tournament discovery + block tracking
   chain: {
     scan:      () => ipcRenderer.invoke('chain:scan'),
+    reclaim:   () => ipcRenderer.invoke('chain:reclaim'),
     blockInfo: () => ipcRenderer.invoke('chain:blockInfo'),
   },
   // Wallet (v0.3.0)
