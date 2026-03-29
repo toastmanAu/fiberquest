@@ -2682,7 +2682,8 @@ async function joinDistributedTournament(tournamentId) {
         // Step 2: Trigger JoyID payment → agent wallet
         // This shows the connect QR, then sign QR
         // Use server-assigned player ID from joinDistributed response
-        const myPlayerId = currentTournament.myPlayerId || currentTournament.playerId || playerId || 'player-0';
+        const myPlayerId = currentTournament.myPlayerId || 'player-1';
+        console.log('[Join] fundAgent with playerId:', myPlayerId, 'tournament:', currentTournament.id);
         window.fiberquest.tournament.fundAgent(currentTournament.id, myPlayerId)
           .then(() => {
             waitingStatus('JoyID QR ready — scan to pay entry fee', 'info');
