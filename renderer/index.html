@@ -2262,7 +2262,9 @@ function handleTournamentEvent(ev) {
       });
       break;
     case 'connect_qr': {
-      const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const rawSlot = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      // PA joining a distributed tournament only has slot 0 in UI, regardless of chain player ID
+      const slotIdx = document.getElementById(`status-${rawSlot}`) ? rawSlot : 0;
       const st = document.getElementById(`status-${slotIdx}`)
       if (st) st.textContent = 'Step 1: Scan to connect JoyID wallet'
       retroLog(`[P${slotIdx+1}] JoyID connect QR ready`, 'info')
@@ -2278,7 +2280,8 @@ function handleTournamentEvent(ev) {
       break
     }
     case 'sign_url': {
-      const slotIdx = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const rawSlot2 = parseInt((ev.playerId || '').replace('player-','')) || 0;
+      const slotIdx = document.getElementById(`status-${rawSlot2}`) ? rawSlot2 : 0;
       const st = document.getElementById(`status-${slotIdx}`)
       if (st) { st.textContent = 'Step 2: Scan to sign & pay'; st.style.color = 'var(--text)'; }
       retroLog(`[P${slotIdx+1}] Deposit tx built — showing sign QR`, 'ok')
