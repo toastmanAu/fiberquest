@@ -1183,6 +1183,11 @@ class Tournament extends EventEmitter {
    * All agents running this on the same data MUST reach the same result.
    */
   _resolveDistributedWinner() {
+    // Sync chain-scanned scores into this.scores so _getScoreBoard() sees all players
+    for (const [pid, s] of Object.entries(this.scoreSubmissions)) {
+      if (s.score !== undefined) this.scores[pid] = s.score;
+    }
+
     const sorted = Object.entries(this.scoreSubmissions)
       .map(([pid, s]) => ({ playerId: pid, score: s.score, koCount: s.koCount }))
       .sort((a, b) => b.score - a.score || a.playerId.localeCompare(b.playerId)); // deterministic tiebreak
