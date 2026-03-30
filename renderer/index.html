@@ -1321,6 +1321,7 @@
           <span style="color:var(--green)">● AGENT</span>
           <span id="agent-addr" style="color:var(--muted);margin-left:var(--sp-sm)"></span>
           <span id="agent-bal" style="color:var(--cyan);margin-left:var(--sp-sm)"></span>
+          <span id="agent-cells" style="color:var(--muted);margin-left:var(--sp-sm)"></span>
         </div>
         <div style="display:flex;gap:var(--sp-xs)">
           <button class="btn" style="font-size:var(--fs-xs)" onclick="saveAgentKey()">SAVE KEY</button>
@@ -1511,8 +1512,16 @@ async function init() {
   checkServices();
   setInterval(checkServices, 5000);
 
-  // Agent status + chain scan
+  // Agent status + chain scan + UTXO monitoring
   await refreshAgentStatus();
+  window.fiberquest.agent.onUtxoStatus((data) => {
+    console.log('[UI] UTXO status:', data);
+    if (data.split) {
+      flash('statusFeed', `✅ Wallet cells split: now ${data.newCount} UTXOs ready`);
+    }
+    const cellsEl = document.getElementById('agent-cells');
+    if (cellsEl) cellsEl.textContent = `${data.cellCount || data.newCount} cells`;
+  });
   refreshChainTournaments();
   setInterval(refreshChainTournaments, 30000);
 
@@ -2468,6 +2477,7 @@ async function refreshAgentStatus() {
       const addr = st.address || '';
       document.getElementById('agent-addr').textContent = addr ? addr.slice(0, 20) + '…' : '—';
       document.getElementById('agent-bal').textContent  = st.balanceCkb != null ? st.balanceCkb.toFixed(2) + ' CKB' : '';
+      document.getElementById('agent-cells').textContent = st.cellCount != null ? `${st.cellCount} cells` : '';
     } else {
       bar.style.display = 'none';
     }

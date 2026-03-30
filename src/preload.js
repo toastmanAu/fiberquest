@@ -75,9 +75,11 @@ contextBridge.exposeInMainWorld('fiberquest', {
   },
   // Agent — CKB on-chain wallet
   agent: {
-    setKey:   (key)  => ipcRenderer.invoke('agent:setKey', key),
-    clearKey: ()     => ipcRenderer.invoke('agent:clearKey'),
-    status:   ()     => ipcRenderer.invoke('agent:status'),
+    setKey:     (key)  => ipcRenderer.invoke('agent:setKey', key),
+    clearKey:   ()     => ipcRenderer.invoke('agent:clearKey'),
+    status:     ()     => ipcRenderer.invoke('agent:status'),
+    splitCells: ()     => ipcRenderer.invoke('agent:splitCells'),
+    onUtxoStatus: (cb) => ipcRenderer.on('wallet:utxo-status', (_, data) => cb(data)),
   },
   // Chain — tournament discovery + block tracking
   chain: {

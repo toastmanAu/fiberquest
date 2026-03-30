@@ -334,9 +334,29 @@ function setupIPC() {
         tournamentManager.wallet     = agentWallet;
         tournamentManager.chainStore = _initChainStore(agentWallet);
       }
+
+      // Assess and pre-split UTXOs in the background
+      agentWallet.assessAndSplitCells(8, 200).then(result => {
+        console.log(`[Main] UTXO status: ${result.cellCount} cells${result.split ? ' (split performed)' : ''}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('wallet:utxo-status', result);
+        }
+      }).catch(e => {
+        console.error('[Main] UTXO assessment failed:', e.message);
+      });
+
       return { ok: true, address: agentWallet.address };
     } catch (e) {
       return { ok: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('agent:splitCells', async () => {
+    if (!agentWallet) return { error: 'No wallet configured' };
+    try {
+      return await agentWallet.assessAndSplitCells(8, 200);
+    } catch (e) {
+      return { error: e.message };
     }
   });
 
@@ -354,7 +374,18 @@ function setupIPC() {
     if (!agentWallet) return { active: false, configured: false };
     try {
       const balance = await agentWallet.getBalance();
-      return { active: true, configured: true, address: agentWallet.address, balanceCkb: balance };
+      const cells = await agentWallet.getLiveCells(200);
+      const plainCells = cells.filter(c =>
+        (!c.output.type || !c.output.type.codeHash) &&
+        (!c.outputData || c.outputData === '0x')
+      );
+      return {
+        active: true, configured: true,
+        address: agentWallet.address,
+        balanceCkb: balance,
+        cellCount: plainCells.length,
+        totalCells: cells.length,
+      };
     } catch (e) {
       return { active: true, configured: true, address: agentWallet.address, balanceCkb: null, error: e.message };
     }
@@ -1175,6 +1206,16 @@ app.whenReady().then(async () => {
     try {
       agentWallet = _initAgentWallet(storedKey);
       console.log(`[Main] Agent wallet loaded: ${agentWallet.address}`);
+
+      // Pre-split UTXOs on startup (background, non-blocking)
+      agentWallet.assessAndSplitCells(8, 200).then(result => {
+        console.log(`[Main] UTXO startup check: ${result.cellCount} plain cells${result.split ? ' (split performed)' : ''}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('wallet:utxo-status', result);
+        }
+      }).catch(e => {
+        console.warn('[Main] UTXO startup check failed:', e.message);
+      });
     } catch (e) {
       console.warn('[Main] Failed to load agent wallet:', e.message);
     }
