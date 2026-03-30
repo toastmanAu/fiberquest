@@ -1598,8 +1598,17 @@ class Tournament extends EventEmitter {
       const myScore = this.scores[this.myPlayerId] || 0;
       console.log(`[Tournament] Settling — my score: ${myScore} (${this.myPlayerId})`);
 
-      // Step 1: Submit own score
-      await this._submitMyScore();
+      // Step 1: Submit own score and WAIT for confirmation
+      const submitResult = await this._submitMyScore();
+      if (submitResult?.txHash && this._wallet) {
+        console.log(`[Tournament] Waiting for own score cell confirmation...`);
+        try {
+          await this._wallet.waitForTxConfirmation(submitResult.txHash, 60000);
+          console.log(`[Tournament] ✅ Own score confirmed on-chain`);
+        } catch (e) {
+          console.warn(`[Tournament] Score confirmation wait failed: ${e.message} — continuing anyway`);
+        }
+      }
 
       // Step 2: Emit settling to UI
       this.emit('settling', { reason, tournamentId: this.id, message: `Score submitted: ${myScore}. Waiting for other agents...` });
@@ -1607,10 +1616,13 @@ class Tournament extends EventEmitter {
       // Step 3: Poll chain on every block for all scores (block-aware)
       if (this._blockTracker) this.startDistributedPolling(this._blockTracker);
 
-      // Step 4: Resolve at submissionDeadline — same moment on all agents
+      // Step 4: Resolve after a MINIMUM settlement window.
+      // Must give enough time for ALL agents' score cells to be indexed.
+      // Minimum 60 seconds — score cells need ~16s to confirm + indexer lag.
+      const MIN_SETTLEMENT_WINDOW = 60000; // 60 seconds minimum
       const deadline = this._submissionDeadline || (Date.now() + 120000);
-      const resolveDelay = Math.max(10000, deadline - Date.now()); // at least 10s
-      console.log(`[Tournament] Will resolve in ${Math.round(resolveDelay/1000)}s (submission deadline)`);
+      const resolveDelay = Math.max(MIN_SETTLEMENT_WINDOW, deadline - Date.now());
+      console.log(`[Tournament] Will resolve in ${Math.round(resolveDelay/1000)}s (settlement window)`);
       setTimeout(() => {
         if (this.state === 'SETTLING') {
           console.log('[Tournament] Settlement timeout (2min) — resolving with available data');
