@@ -498,7 +498,7 @@ class AgentWallet {
     try {
       const rawTx = {
         version: '0x0',
-        cellDeps: [this.secp256k1Dep],
+        cellDeps: [{ outPoint: this.secp256k1Dep, depType: 'depGroup' }],
         headerDeps: [],
         inputs,
         outputs,

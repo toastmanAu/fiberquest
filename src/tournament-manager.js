@@ -661,10 +661,15 @@ class Tournament extends EventEmitter {
       this._submissionDeadline = submissionDeadline;
 
       console.log(`[Tournament] endsAt set: ${new Date(endsAt).toISOString()} (in ${this.timeLimitMs/60000} min)`);
-      console.log(`[Tournament] Writing ACTIVE to chain (fire-and-forget)...`);
+      // Only the organiser writes ACTIVE to chain — joiner reads it via block polling
+      if (!this._isOrganiser) {
+        console.log(`[Tournament] Not organiser — skipping chain ACTIVE write`);
+      } else {
+        console.log(`[Tournament] Writing ACTIVE to chain (fire-and-forget)...`);
+      }
 
       // Fire-and-forget chain write — don't block game start
-      this._chainStore.scanTournaments(this.id).then(async cells => {
+      if (this._isOrganiser) this._chainStore.scanTournaments(this.id).then(async cells => {
         if (!cells[0]) return;
         try {
           await this._chainStore.activateTournament(cells[0].outPoint, {
@@ -1151,7 +1156,17 @@ class Tournament extends EventEmitter {
       this._chainStore = new ChainStore({ wallet });
     }
     try {
-      const organizerAddr = this._organizerAddress || wallet.address;
+      // Always read organizer address from chain to ensure score goes to the right place
+      let organizerAddr = this._organizerAddress;
+      if (!organizerAddr || organizerAddr === wallet.address) {
+        const cells = await this._chainStore.scanTournaments(this.id);
+        if (cells.length && cells[0].organizerAddress) {
+          organizerAddr = cells[0].organizerAddress;
+          this._organizerAddress = organizerAddr;
+          console.log(`[Tournament] Organizer address from chain for score submission: ${organizerAddr.slice(0, 20)}...`);
+        }
+      }
+      organizerAddr = organizerAddr || wallet.address;
       const result = await this._chainStore.submitScoreCell(wallet, this.id, this.myPlayerId, scoreData, organizerAddr);
       console.log(`[Tournament] ✅ Score cell on-chain: ${this.myPlayerId} score=${score} tx=${result.txHash}`);
       return result;
@@ -1423,7 +1438,11 @@ class Tournament extends EventEmitter {
           const wallet = this._wallet || this._chainStore?.wallet;
           if (wallet) {
             try {
-              const organizerAddr = this._organizerAddress || wallet.address;
+              // Read organizer address from the chain cell we already have
+              let organizerAddr = this._organizerAddress || cell.organizerAddress || wallet.address;
+              if (cell.organizerAddress && !this._organizerAddress) {
+                this._organizerAddress = cell.organizerAddress;
+              }
               const scoreCells = await this._chainStore.scanScoreCells(wallet, this.id, organizerAddr);
               for (const sc of scoreCells) {
                 if (!this.scoreSubmissions[sc.playerId]) {
