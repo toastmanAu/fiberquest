@@ -1212,7 +1212,12 @@ class Tournament extends EventEmitter {
       .sort((a, b) => b.score - a.score || a.playerId.localeCompare(b.playerId)); // deterministic tiebreak
 
     const winner = sorted[0];
+    const allScores = sorted.map(s => ({ id: s.playerId, score: s.score }));
     console.log(`[Tournament] Distributed winner: ${winner.playerId} (score=${winner.score})`);
+    console.log(`[Tournament] All submissions:`, JSON.stringify(allScores));
+    try {
+      require('./tx-logger').winnerResolved(this.id, winner.playerId, winner.score, allScores);
+    } catch (_) {}
     this._endTournament('distributed_consensus', winner.playerId);
   }
 
@@ -1613,7 +1618,8 @@ class Tournament extends EventEmitter {
             if (!this.scoreSubmissions[pid]) {
               const localScore = this.scores[pid] || 0;
               this.scoreSubmissions[pid] = { score: localScore, koCount: 0, submittedAt: Date.now() };
-              console.log(`[Tournament] ${pid} using local score: ${localScore}`);
+              console.log(`[Tournament] ⚠️ ${pid} using local score: ${localScore} (chain score not found)`);
+              try { require('./tx-logger').event('SCORE_FALLBACK', `${pid} local=${localScore} chain=missing`) } catch (_) {}
             }
           }
           this._resolveDistributedWinner();

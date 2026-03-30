@@ -65,6 +65,8 @@ const STATE = {
   FUNDING:   'FUNDED',
 }
 
+const txLog = require('./tx-logger')
+
 class ChainStore {
   constructor (opts = {}) {
     this.rpcUrl          = opts.rpcUrl  || process.env.CKB_RPC_URL || 'https://testnet.ckbapp.dev/'
@@ -405,6 +407,7 @@ class ChainStore {
     const txHash = await this.wallet.sendRawTx(signedTx)
 
     console.log(`[ChainStore] Cell updated (${updatedTournament.state}): ${txHash}`)
+    txLog.tournamentUpdated(txHash, updatedTournament.id, updatedTournament.state, updatedTournament)
     return { txHash, outPoint: { txHash, index: '0x0' } }
   }
 
@@ -525,6 +528,7 @@ class ChainStore {
     })
     const txHash = await wallet.sendRawTx(signedTx)
     console.log(`[ChainStore] Score cell submitted: ${txHash} (${playerId}: ${scoreData.score})`)
+    txLog.scoreSubmitted(txHash, tournamentId, playerId, scoreData.score, organizerAddress || 'self')
     return { txHash }
   }
 
@@ -572,6 +576,8 @@ class ChainStore {
       } catch (_) {}
     }
     console.log(`[ChainStore] Score scan: found ${scores.length} scores for ${tournamentId} (scanned ${allCells.length} cells, orgAddr=${organizerAddress?.slice(0,20) || 'self'}...)`)
+    txLog.scoreScanResult(tournamentId, scores.length, allCells.length, organizerAddress, wallet.address)
+    for (const s of scores) txLog.scoreFound(tournamentId, s.playerId, s.score, 'chain_scan')
     return scores
   }
 
