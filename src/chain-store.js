@@ -535,26 +535,43 @@ class ChainStore {
    */
   async scanScoreCells (wallet, tournamentId, organizerAddress) {
     if (!wallet) return []
-    // Scan organiser's cells (where all score cells are sent)
-    let cells
+
+    // Scan BOTH organiser's cells AND our own cells to find all scores
+    // regardless of where they were sent. Dedup by playerId.
+    const allCells = []
+
+    // 1. Scan our own cells
+    try {
+      const ownCells = await wallet.getLiveCells(200)
+      allCells.push(...ownCells)
+    } catch (_) {}
+
+    // 2. Also scan organiser's cells if different from ours
     if (organizerAddress && organizerAddress !== wallet.address) {
-      const utils = require('@nervosnetwork/ckb-sdk-utils')
-      const lock = utils.addressToScript(organizerAddress)
-      cells = await wallet.getCellsForLock(lock, 200)
-    } else {
-      cells = await wallet.getLiveCells(200)
+      try {
+        const utils = require('@nervosnetwork/ckb-sdk-utils')
+        const lock = utils.addressToScript(organizerAddress)
+        const orgCells = await wallet.getCellsForLock(lock, 200)
+        allCells.push(...orgCells)
+      } catch (_) {}
     }
+
     const scores = []
-    for (const cell of cells) {
+    const seen = new Set()
+    for (const cell of allCells) {
       if (!cell.outputData || cell.outputData === '0x') continue
       try {
         const json = Buffer.from(cell.outputData.slice(2), 'hex').toString()
         const parsed = JSON.parse(json)
         if (parsed.type === 'fq_score' && parsed.tournamentId === tournamentId) {
-          scores.push(parsed)
+          if (!seen.has(parsed.playerId)) {
+            seen.add(parsed.playerId)
+            scores.push(parsed)
+          }
         }
       } catch (_) {}
     }
+    console.log(`[ChainStore] Score scan: found ${scores.length} scores for ${tournamentId} (scanned ${allCells.length} cells, orgAddr=${organizerAddress?.slice(0,20) || 'self'}...)`)
     return scores
   }
 
