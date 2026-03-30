@@ -1599,8 +1599,10 @@ class Tournament extends EventEmitter {
       console.log(`[Tournament] Settling — my score: ${myScore} (${this.myPlayerId})`);
 
       // Step 1: Submit own score and WAIT for confirmation
+      this.emit('settling', { reason, tournamentId: this.id, message: `Submitting score (${myScore}) to chain...` });
       const submitResult = await this._submitMyScore();
       if (submitResult?.txHash && this._wallet) {
+        this.emit('settling', { reason, tournamentId: this.id, message: `Score submitted — waiting for chain confirmation...` });
         console.log(`[Tournament] Waiting for own score cell confirmation...`);
         try {
           await this._wallet.waitForTxConfirmation(submitResult.txHash, 60000);
@@ -1611,7 +1613,7 @@ class Tournament extends EventEmitter {
       }
 
       // Step 2: Emit settling to UI
-      this.emit('settling', { reason, tournamentId: this.id, message: `Score submitted: ${myScore}. Waiting for other agents...` });
+      this.emit('settling', { reason, tournamentId: this.id, message: `Score confirmed. Collecting all players' scores...` });
 
       // Step 3: Poll chain on every block for all scores (block-aware)
       if (this._blockTracker) this.startDistributedPolling(this._blockTracker);
