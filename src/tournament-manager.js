@@ -1580,6 +1580,8 @@ class Tournament extends EventEmitter {
   }
 
   async _endTournament(reason, forcedWinner = null) {
+    console.log(`[Tournament] _endTournament called: reason=${reason} state=${this.state} tournamentMode=${this.tournamentMode} isOrganiser=${this._isOrganiser} forcedWinner=${forcedWinner}`);
+    require('./tx-logger').event('END_TOURNAMENT', `reason=${reason} state=${this.state} mode=${this.tournamentMode} isOrg=${this._isOrganiser}`);
     if (this.state !== 'ACTIVE' && this.state !== 'SETTLING' && reason !== 'distributed_consensus') return;
 
     // ── Distributed mode: ALL agents follow the same path ──────────────
