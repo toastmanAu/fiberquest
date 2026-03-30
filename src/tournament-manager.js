@@ -454,10 +454,12 @@ class Tournament extends EventEmitter {
     this.emit('player_paid', { playerId, name: this.players[playerId].name });
 
     const allPaid = Object.values(this.players).length === this.maxPlayers &&
-                    Object.values(this.players).every(p => p.paid);
-    if (allPaid) {
+                    Object.values(this.players).every(p => p.paid && !p._localOnly);
+    if (allPaid && this.tournamentMode !== 'distributed') {
       console.log('[Tournament] All players paid — starting automatically');
       this.start().catch(e => this.emit('error', e));
+    } else if (allPaid && this.tournamentMode === 'distributed') {
+      console.log('[Tournament] All players paid (distributed mode — waiting for startBlock on chain)');
     }
   }
 
@@ -630,9 +632,11 @@ class Tournament extends EventEmitter {
       await this.engine.start();
     }
 
-    // Time limit — don't override if already set by distributed chain poll (synced to endsAt)
-    if (this.timeLimitMs > 0 && !this._timer) {
+    // Time limit — distributed mode uses block-based end, not setTimeout
+    if (this.timeLimitMs > 0 && !this._timer && this.tournamentMode !== 'distributed') {
       this._timer = setTimeout(() => this._endTournament('time_limit'), this.timeLimitMs);
+    } else if (this.tournamentMode === 'distributed') {
+      console.log('[Tournament] Distributed mode — end triggered by endBlock on chain, not timer');
     }
 
     console.log(`[Tournament] STARTED — ${this.gameDef.name} / ${this.mode?.name || this.modeId}`);
@@ -1226,8 +1230,35 @@ class Tournament extends EventEmitter {
         if (Array.isArray(cell.players)) {
           for (const cp of cell.players) {
             const pid = cp.id || cp.playerId || cp.name;
-            if (pid && !this.players[pid]) {
-              this.players[pid] = { name: cp.name || pid, paid: cp.paid ?? true, slotIndex: cp.slotIndex };
+            if (!pid) continue;
+
+            // Dedup: check if we already have a local player with the same address
+            const existingByAddr = cp.address
+              ? Object.entries(this.players).find(([, p]) => p.address && p.address === cp.address)
+              : null;
+
+            if (existingByAddr) {
+              const [existingId, existingPlayer] = existingByAddr;
+              // Merge chain data into existing entry, remap ID if needed
+              if (existingId !== pid) {
+                this.players[pid] = { ...existingPlayer, ...cp, name: cp.name || existingPlayer.name };
+                delete this.players[existingId];
+                console.log(`[Tournament] Chain: remapped local ${existingId} → ${pid} (address match)`);
+              } else {
+                // Same ID, update fields from chain
+                Object.assign(this.players[pid], { address: cp.address, paid: cp.paid ?? this.players[pid].paid });
+              }
+              // Clear the _localOnly flag since chain has confirmed this player
+              delete this.players[pid]._localOnly;
+            } else if (!this.players[pid]) {
+              this.players[pid] = {
+                name: cp.name || pid,
+                address: cp.address || null,
+                paid: cp.paid ?? true,
+                slotIndex: cp.slotIndex,
+                fiberPeerId: cp.fiberPeerId || null,
+                fiberAddr: cp.fiberAddr || null,
+              };
               console.log(`[Tournament] Chain: discovered player ${pid} (${cp.name || pid})`);
             }
           }
@@ -1238,6 +1269,11 @@ class Tournament extends EventEmitter {
             const registered = (cell.players || []).find(p => p.address === myAddr);
             if (registered) {
               this._registrationConfirmed = true;
+              // Set organizer address from chain for score cell scanning
+              if (cell.organizerAddress && !this._organizerAddress) {
+                this._organizerAddress = cell.organizerAddress;
+                console.log(`[Tournament] Organiser address from chain: ${cell.organizerAddress.slice(0, 20)}...`);
+              }
               console.log(`[Tournament] ✅ I've been registered on TC by organiser`);
               this.emit('player_registered_self', { address: myAddr });
               // Entry fee already paid via JoyID L1 deposit to agent wallet.
@@ -1516,8 +1552,7 @@ class Tournament extends EventEmitter {
   }
 
   async _endTournament(reason, forcedWinner = null) {
-    if (this.state !== 'ACTIVE' && reason !== 'distributed_consensus') return;
-    if (this.state !== 'ACTIVE' && this.state !== 'SETTLING') return;
+    if (this.state !== 'ACTIVE' && this.state !== 'SETTLING' && reason !== 'distributed_consensus') return;
 
     // ── Distributed mode: ALL agents follow the same path ──────────────
     // 1. Submit own score to chain
@@ -1762,6 +1797,7 @@ class Tournament extends EventEmitter {
       players:              Object.entries(this.players).map(([id, p]) => ({
                               id,
                               name:        p.name,
+                              address:     p.address || p.senderAddress || p.playerAddress || null,
                               paid:        p.paid,
                               paymentHash: p.paymentHash,
                               fiberPeerId: p.fiberPeerId || null,

@@ -409,6 +409,43 @@ class ChainStore {
   }
 
   /**
+   * Safe cell update with stale-outpoint retry and confirmation waiting.
+   * The updaterFn receives the current cell data and returns updated data.
+   * Retries up to maxRetries times if the outpoint is stale.
+   */
+  async safeUpdateCell (tournamentId, updaterFn, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Always get fresh cell data from chain
+      const cells = await this.scanTournaments(tournamentId)
+      if (!cells.length) throw new Error(`Tournament cell not found: ${tournamentId}`)
+      const cell = cells[0]
+
+      // Apply the update function to get new data
+      const updatedData = updaterFn(cell)
+
+      try {
+        const result = await this.updateCell(cell.outPoint, updatedData)
+        // Wait for confirmation so next caller gets a valid outpoint
+        await this.wallet.waitForTxConfirmation(result.txHash)
+        return { ...result, outPoint: { txHash: result.txHash, index: '0x0' } }
+      } catch (e) {
+        const msg = e.message || ''
+        if (attempt < maxRetries - 1 &&
+            (msg.includes('OutPointAlreadySpent') ||
+             msg.includes('Dead') ||
+             msg.includes('Unknown') ||
+             msg.includes('Resolve'))) {
+          console.log(`[ChainStore] Stale outpoint on attempt ${attempt + 1}/${maxRetries}, retrying...`)
+          await new Promise(r => setTimeout(r, 4000)) // wait for indexer to catch up
+          continue
+        }
+        throw e
+      }
+    }
+    throw new Error(`safeUpdateCell failed after ${maxRetries} retries for ${tournamentId}`)
+  }
+
+  /**
    * Transition OPEN → FUNDED (all players registered + channels open) or → CANCELLED.
    */
   async closeRegistration (outPoint, tournament) {

@@ -391,6 +391,135 @@ class AgentWallet {
     return this.ckb.rpc.sendTransaction(signedTx, 'passthrough')
   }
 
+  /**
+   * Wait for a transaction to be committed on-chain.
+   * Polls get_transaction every pollMs until status is 'committed'.
+   * Returns { confirmed, status, blockNumber, txHash }.
+   * Throws on timeout.
+   */
+  async waitForTxConfirmation (txHash, timeoutMs = 120000, pollMs = 3000) {
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const tx = await this._rpc('get_transaction', [txHash])
+        if (tx && tx.tx_status) {
+          const status = tx.tx_status.status
+          if (status === 'committed') {
+            console.log(`[Wallet] ✅ Tx ${txHash.slice(0, 10)}... committed in block ${tx.tx_status.block_number}`)
+            return {
+              confirmed: true,
+              status,
+              blockNumber: tx.tx_status.block_number,
+              txHash,
+            }
+          }
+          if (status === 'rejected') {
+            throw new Error(`Tx ${txHash.slice(0, 10)}... rejected: ${tx.tx_status.reason || 'unknown'}`)
+          }
+          // pending or proposed — keep waiting
+          if (Date.now() - start > 10000) { // only log after 10s
+            console.log(`[Wallet] ⏳ Tx ${txHash.slice(0, 10)}... status: ${status}`)
+          }
+        }
+      } catch (e) {
+        if (e.message?.includes('rejected')) throw e
+        // RPC error — retry
+      }
+      await new Promise(r => setTimeout(r, pollMs))
+    }
+    throw new Error(`Tx ${txHash.slice(0, 10)}... not confirmed after ${timeoutMs / 1000}s`)
+  }
+
+  /**
+   * Assess current UTXO count and split if insufficient.
+   * Ensures the wallet has enough cells for sequential tournament operations.
+   * Returns { cellCount, split, newCount }.
+   */
+  async assessAndSplitCells (targetCount = 8, minCkbPerCell = 200) {
+    const cells = await this.getLiveCells(200)
+    // Only count plain cells (no type script, no data)
+    const plainCells = cells.filter(c =>
+      (!c.output.type || !c.output.type.codeHash) &&
+      (!c.outputData || c.outputData === '0x')
+    )
+
+    console.log(`[Wallet] UTXO assessment: ${plainCells.length} plain cells (target: ${targetCount})`)
+
+    if (plainCells.length >= targetCount) {
+      return { cellCount: plainCells.length, split: false, newCount: plainCells.length }
+    }
+
+    // Find cells with enough capacity to split
+    const totalCapacity = plainCells.reduce((s, c) => s + BigInt(c.output.capacity), 0n)
+    const minPerCell = BigInt(minCkbPerCell) * 100000000n
+    const neededCapacity = BigInt(targetCount) * minPerCell
+
+    if (totalCapacity < neededCapacity) {
+      console.log(`[Wallet] Insufficient CKB for split: ${Number(totalCapacity) / 1e8} CKB < ${targetCount * minCkbPerCell} CKB needed`)
+      return { cellCount: plainCells.length, split: false, newCount: plainCells.length, error: 'insufficient_ckb' }
+    }
+
+    // Build split transaction: consume largest cells, create targetCount outputs
+    const sortedCells = plainCells.sort((a, b) =>
+      Number(BigInt(b.output.capacity) - BigInt(a.output.capacity))
+    )
+
+    // Take enough input cells to cover the split
+    const inputs = []
+    let inputCapacity = 0n
+    for (const cell of sortedCells) {
+      inputs.push({
+        previousOutput: { txHash: cell.outPoint.txHash, index: cell.outPoint.index },
+        since: '0x0',
+      })
+      inputCapacity += BigInt(cell.output.capacity)
+      if (inputCapacity >= neededCapacity + 100000000n) break // +1 CKB for fee
+    }
+
+    // Create targetCount equal outputs
+    const fee = 10000n // 0.0001 CKB fee
+    const perCell = (inputCapacity - fee) / BigInt(targetCount)
+    const outputs = []
+    const outputsData = []
+
+    for (let i = 0; i < targetCount; i++) {
+      const capacity = i === targetCount - 1
+        ? inputCapacity - fee - perCell * BigInt(targetCount - 1) // last cell gets remainder
+        : perCell
+      outputs.push({
+        capacity: `0x${capacity.toString(16)}`,
+        lock: this.lockScript,
+      })
+      outputsData.push('0x')
+    }
+
+    console.log(`[Wallet] Splitting ${inputs.length} cell(s) into ${targetCount} cells of ~${Number(perCell) / 1e8} CKB each`)
+
+    try {
+      const rawTx = {
+        version: '0x0',
+        cellDeps: [this.secp256k1Dep],
+        headerDeps: [],
+        inputs,
+        outputs,
+        outputsData,
+        witnesses: inputs.map(() => '0x'),
+      }
+
+      const signedTx = this.ckb.signTransaction(this.privateKey)(rawTx)
+      const txHash = await this.sendRawTx(signedTx)
+      console.log(`[Wallet] Split tx sent: ${txHash}`)
+
+      await this.waitForTxConfirmation(txHash, 120000)
+      console.log(`[Wallet] ✅ Split confirmed. Now have ${targetCount} cells.`)
+
+      return { cellCount: targetCount, split: true, newCount: targetCount }
+    } catch (e) {
+      console.error(`[Wallet] Split failed: ${e.message}`)
+      return { cellCount: plainCells.length, split: false, newCount: plainCells.length, error: e.message }
+    }
+  }
+
   async getBalance () {
     const cells = await this.getLiveCells(200)
     const total = cells
