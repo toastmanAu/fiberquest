@@ -1444,6 +1444,10 @@ class Tournament extends EventEmitter {
                 this._organizerAddress = cell.organizerAddress;
               }
               const scoreCells = await this._chainStore.scanScoreCells(wallet, this.id, organizerAddr);
+              const needed = Object.keys(this.players).filter(pid => !this.scoreSubmissions[pid]);
+              if (needed.length > 0) {
+                console.log(`[Tournament] Score scan: addr=${organizerAddr?.slice(0,20)}... found=${scoreCells.length} cells, missing=${needed.join(',')}`);
+              }
               for (const sc of scoreCells) {
                 if (!this.scoreSubmissions[sc.playerId]) {
                   this.scoreSubmissions[sc.playerId] = sc;
